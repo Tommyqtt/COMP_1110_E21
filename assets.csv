@@ -1,0 +1,6 @@
+asset_id,asset_class,risk_level,mu_monthly,sigma_monthly,fee_rate,notes
+CASH,cash,1,0.001,0.001,0,Low risk cash proxy
+BOND_GOVT,bonds,1,0.003,0.01,0.0002,Investment-grade bond proxy
+BALANCED,balanced,3,0.005,0.02,0.0005,60-40 mix
+EQUITY,equity,4,0.008,0.05,0.001,Equity proxy
+HIGH_RISK,high_risk,5,0.012,0.08,0.002,High risk growth

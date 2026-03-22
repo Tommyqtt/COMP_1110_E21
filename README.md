@@ -2,7 +2,7 @@
 
 COMP1110 E21 - Topic A: Personal Budget and Spending Assistant, with MockWealth portfolio simulation.
 
-Pure Python, text-based CLI. No external dependencies.
+Pure Python, text-based CLI and Tkinter GUI. No external dependencies.
 
 ## Requirements
 
@@ -10,9 +10,21 @@ Pure Python, text-based CLI. No external dependencies.
 
 ## How to Run
 
+**CLI (text-based):**
 ```bash
-python main.py
+python3 main.py
 ```
+
+**GUI (Tkinter):**
+```bash
+python3 main.py --gui
+```
+or
+```bash
+python3 main.py -g
+```
+
+Run from the project root directory so `transactions.csv`, `budgets.csv`, and `assets.csv` are found.
 
 ## File Formats
 
@@ -70,10 +82,15 @@ To generate new test data:
 python tests/test_generator.py
 ```
 
+## UI Design
+
+A design system (colors, typography, spacing) is applied across all tabs. See [UI_DESIGN.md](UI_DESIGN.md) for the token reference and coherence verification.
+
 ## Project Structure
 
 ```
-├── main.py         # CLI entrypoint
+├── main.py         # CLI entrypoint, --gui for Tkinter UI
+├── ui.py           # Tkinter GUI (5 tabs)
 ├── data.py         # Data models, load/save
 ├── stats.py        # Summary statistics
 ├── alerts.py       # Rule-based alerts

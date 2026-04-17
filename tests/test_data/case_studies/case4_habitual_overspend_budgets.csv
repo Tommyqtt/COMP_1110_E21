@@ -1,0 +1,4 @@
+category,period,threshold,alert_type
+food,daily,50,overspend
+shopping,weekly,200,overspend
+transport,monthly,200,overspend

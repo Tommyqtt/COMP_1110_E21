@@ -254,7 +254,7 @@ def check_subscription_creep(transactions: List[Transaction], threshold_pct: flo
     prev_amt = monthly[prev_month]
     curr_amt = monthly[curr_month]
 
-    if prev_amt == 0:
+    if prev_amt <= 0:
         return alerts
 
     change_pct = ((curr_amt - prev_amt) / prev_amt) * 100

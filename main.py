@@ -7,6 +7,7 @@ import sys
 from typing import List, Tuple
 
 from data import (
+    BUDGETS_PATH,
     BudgetRule,
     DEFAULT_CATEGORIES,
     Transaction,
@@ -21,9 +22,9 @@ from data import (
 from stats import format_summary, by_category, by_period
 from alerts import run_all_alerts
 
-# Default file paths
+# Default file paths (budgets next to data.py so CLI finds the same file as the GUI)
 TRANSACTIONS_FILE = "transactions.csv"
-BUDGETS_FILE = "budgets.csv"
+BUDGETS_FILE = str(BUDGETS_PATH)
 
 
 # Interactive helpers

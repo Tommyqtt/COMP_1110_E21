@@ -70,13 +70,23 @@ date,amount,category,description
 - `description`: optional text
 
 ### budgets.csv
+
+Unified file: **budget caps**, **category % rules**, and **GUI alert thresholds** (`row_type` is `cap`, `pct`, or `setting`).
+
 ```
-category,period,threshold,alert_type
-food,daily,50,overspend
-transport,monthly,300,overspend
+row_type,v1,v2,v3,v4
+cap,food,daily,50,overspend
+pct,food,25,60,
+setting,consecutive_overspend_days,3,,
+setting,subscription_creep_threshold_pct,20,,
+setting,uncategorized_min_transactions,1,,
 ```
-- `period`: daily, weekly, or monthly
-- `threshold`: HKD cap
+
+- **`cap`**: `v1` category, `v2` period (`daily` / `weekly` / `monthly`), `v3` HKD threshold, `v4` alert type (e.g. `overspend`).
+- **`pct`**: `v1` category, `v2` warning % of total spending, `v3` optional critical %, `v4` blank.
+- **`setting`**: `v1` key (`consecutive_overspend_days`, `subscription_creep_threshold_pct`, `uncategorized_min_transactions`), `v2` value.
+
+Legacy **cap-only** CSV (`category,period,threshold,alert_type`) is still read on load; the app may merge a one-time `gui_settings.json` if present.
 
 ### assets.csv (for MockWealth)
 ```

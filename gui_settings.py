@@ -1,12 +1,15 @@
 """
-Load/save GUI-only settings (alert thresholds, etc.) in gui_settings.json.
-pct_rules: list of [category, warning_pct, critical_pct] — critical 0 = warning tier only.
+Alert thresholds and pct-rule normalization. Values are stored in budgets.csv (unified with caps).
 """
 
-import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import data as _data
+
+from data import load_budgets_bundle, save_budgets_bundle
+
+# Legacy path (migration only; data.load_budgets_bundle reads it if present)
 SETTINGS_PATH = Path(__file__).resolve().parent / "gui_settings.json"
 
 DEFAULT_SETTINGS: Dict[str, Any] = {
@@ -39,7 +42,8 @@ def _parse_pct_row(row: Any) -> Optional[List[Any]]:
     return [cat, w, c]
 
 
-def _normalize(data: Dict[str, Any]) -> Dict[str, Any]:
+def normalize_gui_settings(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Validate defaults and dedupe pct_rules (replacing former _normalize)."""
     out = DEFAULT_SETTINGS.copy()
     out.update(data)
     out.pop("alert_strip_width", None)  # removed from UI; ignore if present in old files
@@ -69,28 +73,23 @@ def _normalize(data: Dict[str, Any]) -> Dict[str, Any]:
         out["subscription_creep_threshold_pct"] = max(0.0, min(500.0, c))
     except (TypeError, ValueError):
         out["subscription_creep_threshold_pct"] = 20.0
+    try:
+        u = out.get("uncategorized_min_transactions")
+        if u is not None:
+            out["uncategorized_min_transactions"] = max(1, int(u))
+    except (TypeError, ValueError):
+        out.pop("uncategorized_min_transactions", None)
     return out
 
 
 def load_gui_settings() -> Dict[str, Any]:
-    if not SETTINGS_PATH.exists():
-        data = _normalize({})
-        save_gui_settings(data)
-        return data
-    try:
-        with open(SETTINGS_PATH, encoding="utf-8") as f:
-            raw = json.load(f)
-        if not isinstance(raw, dict):
-            return _normalize({})
-        return _normalize(raw)
-    except (OSError, json.JSONDecodeError):
-        return _normalize({})
+    _, gs = load_budgets_bundle(str(_data.BUDGETS_PATH))
+    return gs
 
 
 def save_gui_settings(data: Dict[str, Any]) -> Dict[str, Any]:
-    normalized = _normalize(data)
-    SETTINGS_PATH.write_text(json.dumps(normalized, indent=2), encoding="utf-8")
-    return normalized
+    rules, _ = load_budgets_bundle(str(_data.BUDGETS_PATH))
+    return save_budgets_bundle(rules, data, str(_data.BUDGETS_PATH))
 
 
 def pct_rules_as_tuples(settings: Dict[str, Any]) -> List[Tuple[str, float, float]]:

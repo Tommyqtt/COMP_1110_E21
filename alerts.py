@@ -10,7 +10,7 @@ Implements 5 alert types:
 """
 
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import List, Optional, Sequence, Tuple
 
 from data import BudgetRule, Transaction
@@ -178,20 +178,30 @@ def check_consecutive_overspend(
         if not daily_totals:
             continue
 
-        # Walk through dates in order and count consecutive overspend days
+        # Calendar-consecutive overspend days only (not just consecutive rows in
+        # sorted_dates — gaps with zero category spend must break the run).
         sorted_dates = sorted(daily_totals.keys())
         streak = 0
         max_streak = 0
-        streak_start = None
+        last_overspend_day: Optional[date] = None
 
-        for i, date_str in enumerate(sorted_dates):
-            if daily_totals[date_str] > rule.threshold:
-                if streak == 0:
-                    streak_start = date_str
-                streak += 1
+        for date_str in sorted_dates:
+            spent = daily_totals[date_str]
+            try:
+                day = datetime.strptime(date_str, "%Y-%m-%d").date()
+            except ValueError:
+                continue
+
+            if spent > rule.threshold:
+                if last_overspend_day is not None and day == last_overspend_day + timedelta(days=1):
+                    streak += 1
+                else:
+                    streak = 1
+                last_overspend_day = day
                 max_streak = max(max_streak, streak)
             else:
                 streak = 0
+                last_overspend_day = None
 
         if max_streak >= streak_threshold:
             alerts.append(

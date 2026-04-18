@@ -160,6 +160,16 @@ class TestConsecutiveOverspend(unittest.TestCase):
         a = check_consecutive_overspend(txs, rules, streak_threshold=3)
         self.assertEqual(len(a), 1)
         self.assertIn("[STREAK]", a[0])
+        self.assertIn("for 3 consecutive day(s)", a[0])
+
+    def test_calendar_gap_breaks_streak(self) -> None:
+        """Spending on day 1 and day 3 only (no day 2) is not a 2-day calendar streak."""
+        txs = [
+            T("2026-04-01", -60, "food"),
+            T("2026-04-03", -60, "food"),
+        ]
+        rules = [BudgetRule("food", "daily", 50, "overspend")]
+        self.assertEqual(check_consecutive_overspend(txs, rules, streak_threshold=2), [])
 
 
 class TestUncategorizedAndCreep(unittest.TestCase):
@@ -254,14 +264,22 @@ class TestDataValidation(unittest.TestCase):
 
 class TestGuiSettingsFile(unittest.TestCase):
     def setUp(self) -> None:
-        self.tmp = Path(tempfile.mkdtemp()) / "gui_settings.json"
-        self.patch = patch.object(gui_settings, "SETTINGS_PATH", self.tmp)
+        import data as data_mod
+
+        self._td = Path(tempfile.mkdtemp())
+        self.tmp = self._td / "budgets.csv"
+        self.patch = patch.object(data_mod, "BUDGETS_PATH", self.tmp)
         self.patch.start()
 
     def tearDown(self) -> None:
         self.patch.stop()
-        if self.tmp.exists():
-            self.tmp.unlink()
+        if self._td.exists():
+            try:
+                for p in self._td.iterdir():
+                    p.unlink()
+                self._td.rmdir()
+            except OSError:
+                pass
 
     def test_roundtrip_and_dedup(self) -> None:
         data = {

@@ -40,12 +40,13 @@ _CATEGORY_BAR_COLORS = (
 )
 
 from data import (
+    BUDGETS_PATH,
     BudgetRule,
     DEFAULT_CATEGORIES,
     Transaction,
     load_budget_rules,
     load_transactions,
-    save_budget_rules,
+    save_budgets_bundle,
     save_transactions,
     validate_amount,
     validate_category,
@@ -60,10 +61,10 @@ from stats import (
 )
 from alerts import run_all_alerts, split_alert_message
 import portfolio
-from gui_settings import load_gui_settings, pct_rules_as_tuples, save_gui_settings
+from gui_settings import load_gui_settings, pct_rules_as_tuples
 
 TRANSACTIONS_FILE = "transactions.csv"
-BUDGETS_FILE = "budgets.csv"
+BUDGETS_FILE = str(BUDGETS_PATH)
 
 _MONTH_NAMES = (
     "January", "February", "March", "April", "May", "June",
@@ -219,7 +220,12 @@ def run_gui() -> None:
 
     def save_data():
         save_transactions(state["transactions"], TRANSACTIONS_FILE)
-        save_budget_rules(state["rules"], BUDGETS_FILE)
+        merged = save_budgets_bundle(
+            state["rules"],
+            state.get("gui_settings") or load_gui_settings(),
+            BUDGETS_FILE,
+        )
+        state["gui_settings"] = merged
 
     # Header bar with accent line
     header = tk.Frame(root, bg=COLORS["accent"], height=4)
@@ -256,7 +262,7 @@ def run_gui() -> None:
     portfolio_frame = create_portfolio_tab(nb)
     nb.add(portfolio_frame, text="Portfolio")
 
-    # Settings tab (gui_settings.json + budgets.csv)
+    # Settings tab (unified budgets.csv: caps, % rules, alert thresholds)
     settings_frame = create_settings_tab(nb, state, reload_data)
     nb.add(settings_frame, text="Settings")
 
@@ -267,7 +273,7 @@ _BUDGET_PERIODS = ("daily", "weekly", "monthly")
 
 
 def create_settings_tab(parent: ttk.Notebook, state: dict, reload_data: Callable) -> ttk.Frame:
-    """Edit gui_settings.json and budgets.csv (alerts on Summary)."""
+    """Edit budgets.csv (caps, category % rules, alert thresholds; alerts on Summary)."""
     outer = ttk.Frame(parent, padding=PAD_LG)
 
     scroll_wrap = tk.Frame(outer, bg=COLORS["bg"])
@@ -298,7 +304,7 @@ def create_settings_tab(parent: ttk.Notebook, state: dict, reload_data: Callable
     _tab_hero(
         content,
         "Settings",
-        "Budget caps (HK$) drive overspend and streak alerts. Category % rules and the options below use gui_settings.json; caps are saved to budgets.csv.",
+        "Budget caps (HK$) drive overspend and streak alerts. Category % rules and the options below are stored in budgets.csv with the caps.",
     )
 
     _section_header(content, "Budget caps (HK$)")
@@ -661,12 +667,11 @@ def create_settings_tab(parent: ttk.Notebook, state: dict, reload_data: Callable
         state["gui_settings"]["pct_rules"] = new_pct
         state["gui_settings"]["consecutive_overspend_days"] = max(1, min(30, cd))
         state["gui_settings"]["subscription_creep_threshold_pct"] = max(0.0, min(500.0, creep))
-        save_budget_rules(state["rules"], BUDGETS_FILE)
-        merged = save_gui_settings(state["gui_settings"])
+        merged = save_budgets_bundle(state["rules"], state["gui_settings"], BUDGETS_FILE)
         state["gui_settings"] = merged
         reload_data()
         msg.config(
-            text="Saved to gui_settings.json and budgets.csv. Refresh the Summary tab if alerts look stale.",
+            text="Saved to budgets.csv. Refresh the Summary tab if alerts look stale.",
             fg=COLORS["success"],
         )
         redraw_budget_rows()

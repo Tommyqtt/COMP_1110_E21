@@ -271,7 +271,6 @@ def create_settings_tab(parent: ttk.Notebook, state: dict, reload_data: Callable
     outer = ttk.Frame(parent, padding=PAD_LG)
 
     scroll_wrap = tk.Frame(outer, bg=COLORS["bg"])
-    scroll_wrap.pack(fill="both", expand=True)
     canvas = tk.Canvas(scroll_wrap, bg=COLORS["bg"], highlightthickness=0)
     vsb = ttk.Scrollbar(scroll_wrap, orient="vertical", command=canvas.yview)
     content = tk.Frame(canvas, bg=COLORS["bg"])
@@ -287,8 +286,6 @@ def create_settings_tab(parent: ttk.Notebook, state: dict, reload_data: Callable
 
     content.bind("<Configure>", on_settings_content_configure)
     canvas.configure(yscrollcommand=vsb.set)
-    canvas.pack(side="left", fill="both", expand=True)
-    vsb.pack(side="right", fill="y")
 
     def _sync_settings_scroll() -> None:
         canvas.update_idletasks()
@@ -579,7 +576,15 @@ def create_settings_tab(parent: ttk.Notebook, state: dict, reload_data: Callable
     )
     ttk.Entry(other_inner, textvariable=creep_var, width=8).pack(anchor="w", pady=(0, PAD_LG))
 
-    msg = tk.Label(other_inner, text="", bg=COLORS["surface"], font=(FONT_FAMILY, FONT_SIZE))
+    settings_footer = tk.Frame(outer, bg=COLORS["bg"])
+    msg = tk.Label(
+        settings_footer,
+        text="",
+        bg=COLORS["bg"],
+        font=(FONT_FAMILY, FONT_SIZE),
+        wraplength=560,
+        justify="left",
+    )
 
     def save_settings() -> None:
         _sync_budget_from_ui()
@@ -667,9 +672,19 @@ def create_settings_tab(parent: ttk.Notebook, state: dict, reload_data: Callable
         redraw_budget_rows()
         redraw_pct_rows()
 
-    ttk.Separator(content, orient="horizontal").pack(fill="x", pady=PAD_MD)
-    ttk.Button(content, text="Save settings", command=save_settings).pack(pady=PAD_SM)
-    msg.pack(anchor="w", pady=PAD_SM)
+    ttk.Separator(settings_footer, orient="horizontal").pack(fill="x", pady=(0, PAD_MD))
+    save_btn_row = tk.Frame(settings_footer, bg=COLORS["bg"])
+    save_btn_row.columnconfigure(0, weight=1)
+    save_btn_row.columnconfigure(1, weight=0)
+    save_btn_row.columnconfigure(2, weight=1)
+    ttk.Button(save_btn_row, text="Save settings", command=save_settings).grid(row=0, column=1)
+    save_btn_row.pack(fill="x")
+    msg.pack(anchor="w", fill="x", pady=(PAD_SM, 0))
+
+    settings_footer.pack(side="bottom", fill="x")
+    canvas.pack(side="left", fill="both", expand=True)
+    vsb.pack(side="right", fill="y")
+    scroll_wrap.pack(fill="both", expand=True)
 
     _bind_mousewheel_to_canvas_and_content(canvas, content)
     _sync_settings_scroll()

@@ -186,11 +186,13 @@ def check_consecutive_overspend(
 
         for date_str in sorted_dates:
             spent = daily_totals[date_str]
+          if isinstance(date_str, date):
+            day = date_str
+        else:
             try:
                 day = datetime.strptime(date_str, "%Y-%m-%d").date()
             except ValueError:
                 continue
-
             if spent > rule.threshold:
                 if last_overspend_day is not None and day == last_overspend_day + timedelta(days=1):
                     streak += 1

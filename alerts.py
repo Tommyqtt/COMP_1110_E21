@@ -93,7 +93,9 @@ def check_category_caps(
             continue
 
         # Only look at transactions matching this category
-        cat_txns = [t for t in transactions if t.category == rule.category]
+    cat_txns = [t for t in transactions if t.category == rule.category]
+        if not cat_txns:
+            continue
         cat_period_totals = by_period(cat_txns, rule.period)
 
         if not cat_period_totals:

@@ -61,11 +61,8 @@ def normalize_pct_rules_rows(
             continue
         if not (0 < w <= 100):
             continue
-        if c < 0:
-            c = 0.0
-        if c > 100:
-            c = 100.0
-        if c > 0 and c <= w:
+        c = max(0.0, min(100.0, c))
+        if 0 < c <= w:
             continue
         out.append((cat, w, c))
     return out

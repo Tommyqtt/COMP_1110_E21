@@ -30,6 +30,14 @@ PAD_XL = 16
 FONT_FAMILY = "Helvetica"
 FONT_SIZE = 11
 FONT_HEADING = (FONT_FAMILY, FONT_SIZE + 2, "bold")
+FONT_SECTION = (FONT_FAMILY, FONT_SIZE + 1, "bold")
+FONT_KPI = (FONT_FAMILY, 20, "bold")
+
+# Distinct colors for category bars (unknown categories cycle by hash)
+_CATEGORY_BAR_COLORS = (
+    "#0d9488", "#3b82f6", "#8b5cf6", "#f59e0b", "#ec4899",
+    "#14b8a6", "#6366f1", "#84cc16", "#f43f5e",
+)
 
 from data import (
     BudgetRule,
@@ -43,7 +51,14 @@ from data import (
     validate_category,
     validate_date,
 )
-from stats import format_summary
+from stats import (
+    average_daily_spending,
+    by_category,
+    by_period,
+    top_categories,
+    total_spending,
+    trend_last_n_days,
+)
 from alerts import run_all_alerts
 import portfolio
 
@@ -183,8 +198,8 @@ def run_gui() -> None:
     """Launch the Tkinter GUI."""
     root = tk.Tk()
     root.title("Personal Budget Assistant")
-    root.geometry("640x500")
-    root.minsize(520, 420)
+    root.geometry("720x560")
+    root.minsize(560, 440)
     root.configure(bg=COLORS["bg"])
     setup_styles(root)
 
@@ -244,30 +259,243 @@ def run_gui() -> None:
     root.mainloop()
 
 
-def create_summary_tab(parent: ttk.Notebook, state: dict, reload_data: Callable) -> ttk.Frame:
-    """Summary tab: totals, by category, top 3, trends."""
-    frame = ttk.Frame(parent, padding=PAD_LG)
-    card = tk.Frame(frame, bg=COLORS["surface"], relief="flat", padx=PAD_LG, pady=PAD_LG, highlightbackground=COLORS["border"], highlightthickness=1)
-    card.pack(fill="both", expand=True)
-
-    text = tk.Text(card, wrap="word", height=18, width=58, state="disabled", bg=COLORS["surface"], fg=COLORS["text"],
-                   font=(FONT_FAMILY, FONT_SIZE), relief="flat", padx=PAD_MD, pady=PAD_MD)
-    text.pack(fill="both", expand=True)
-
-    ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=PAD_MD)
-    btn = ttk.Button(frame, text="Refresh", command=lambda: _refresh_summary(text, state, reload_data))
-    btn.pack(pady=PAD_SM)
-
-    _refresh_summary(text, state, reload_data)
-    return frame
+def _category_bar_color(name: str) -> str:
+    h = sum(ord(c) for c in name.lower())
+    return _CATEGORY_BAR_COLORS[h % len(_CATEGORY_BAR_COLORS)]
 
 
-def _refresh_summary(text: tk.Text, state: dict, reload_data: Callable) -> None:
+def _canvas_mousewheel_handler(canvas: tk.Canvas):
+    """Return a handler that scrolls *canvas* vertically from a mouse wheel event."""
+
+    def on_wheel(event) -> Optional[str]:
+        delta = 0
+        if event.num == 5:
+            delta = 1
+        elif event.num == 4:
+            delta = -1
+        elif getattr(event, "delta", 0):
+            if sys.platform == "darwin":
+                delta = -event.delta
+            else:
+                delta = -1 if event.delta > 0 else 1
+        if delta:
+            canvas.yview_scroll(delta, "units")
+            return "break"
+        return None
+
+    return on_wheel
+
+
+def _bind_mousewheel_to_canvas_and_content(canvas: tk.Canvas, content: tk.Widget) -> None:
+    """
+    Wheel events hit the widget under the cursor; inner labels/frames do not bubble to the canvas.
+    Bind the same scroll handler on the canvas and recursively on all descendants of content.
+    """
+    handler = _canvas_mousewheel_handler(canvas)
+    for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+        canvas.bind(seq, handler)
+
+    def bind_descendants(w: tk.Widget) -> None:
+        for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+            w.bind(seq, handler)
+        for child in w.winfo_children():
+            bind_descendants(child)
+
+    bind_descendants(content)
+
+
+def _kpi_card(parent: tk.Widget, title: str, value: str, subtitle: str = "") -> tk.Frame:
+    card = tk.Frame(parent, bg=COLORS["surface"], highlightbackground=COLORS["border"], highlightthickness=1)
+    strip = tk.Frame(card, bg=COLORS["accent"], width=4)
+    strip.pack(side="left", fill="y")
+    box = tk.Frame(card, bg=COLORS["surface"], padx=PAD_MD, pady=PAD_MD)
+    box.pack(side="left", fill="both", expand=True)
+    tk.Label(
+        box, text=title, bg=COLORS["surface"], fg=COLORS["text_muted"],
+        font=(FONT_FAMILY, FONT_SIZE - 1),
+    ).pack(anchor="w")
+    tk.Label(
+        box, text=value, bg=COLORS["surface"], fg=COLORS["text"],
+        font=FONT_KPI,
+    ).pack(anchor="w", pady=(2, 0))
+    if subtitle:
+        tk.Label(
+            box, text=subtitle, bg=COLORS["surface"], fg=COLORS["accent"],
+            font=(FONT_FAMILY, FONT_SIZE - 1),
+        ).pack(anchor="w")
+    return card
+
+
+def _section_header(parent: tk.Widget, title: str, emoji: str = "") -> None:
+    row = tk.Frame(parent, bg=COLORS["bg"])
+    row.pack(fill="x", pady=(PAD_XL, PAD_MD))
+    label = f"{emoji} {title}".strip() if emoji else title
+    tk.Label(row, text=label, bg=COLORS["bg"], fg=COLORS["text"], font=FONT_SECTION).pack(anchor="w")
+    bar = tk.Frame(row, bg=COLORS["accent"], height=2)
+    bar.pack(fill="x", pady=(PAD_SM, 0))
+
+
+def _category_row(parent: tk.Widget, name: str, amount: float, pct: float, bar_width: int = 200) -> None:
+    row = tk.Frame(parent, bg=COLORS["bg"])
+    row.pack(fill="x", pady=PAD_SM)
+    tk.Label(
+        row, text=name.capitalize(), bg=COLORS["bg"], fg=COLORS["text"],
+        font=(FONT_FAMILY, FONT_SIZE), width=11, anchor="w",
+    ).pack(side="left")
+    track = tk.Frame(row, bg=COLORS["border"], height=12, width=bar_width)
+    track.pack(side="left", padx=(PAD_SM, PAD_SM), pady=2)
+    track.pack_propagate(False)
+    fill_w = max(2, int(bar_width * (pct / 100.0)))
+    tk.Frame(track, bg=_category_bar_color(name), height=12, width=fill_w).place(x=0, y=0, relheight=1)
+    tk.Label(
+        row, text=f"{pct:.0f}%", bg=COLORS["bg"], fg=COLORS["accent"],
+        font=(FONT_FAMILY, FONT_SIZE, "bold"), width=5, anchor="e",
+    ).pack(side="right", padx=(0, PAD_SM))
+    tk.Label(
+        row, text=f"HK$ {amount:,.2f}", bg=COLORS["bg"], fg=COLORS["text_muted"],
+        font=(FONT_FAMILY, FONT_SIZE), width=12, anchor="e",
+    ).pack(side="right")
+
+
+def _mini_stat_row(parent: tk.Widget, label: str, amount: float) -> None:
+    row = tk.Frame(parent, bg=COLORS["accent_light"], padx=PAD_MD, pady=PAD_SM)
+    row.pack(fill="x", pady=PAD_SM)
+    tk.Label(
+        row, text=label, bg=COLORS["accent_light"], fg=COLORS["text"],
+        font=(FONT_FAMILY, FONT_SIZE),
+    ).pack(side="left")
+    tk.Label(
+        row, text=f"HK$ {amount:,.2f}", bg=COLORS["accent_light"], fg=COLORS["accent"],
+        font=(FONT_FAMILY, FONT_SIZE, "bold"),
+    ).pack(side="right")
+
+
+def _refresh_summary_dashboard(
+    content: tk.Frame,
+    state: dict,
+    reload_data: Callable,
+    canvas: tk.Canvas,
+) -> None:
     reload_data()
-    text.config(state="normal")
-    text.delete("1.0", "end")
-    text.insert("1.0", format_summary(state["transactions"]))
-    text.config(state="disabled")
+    for w in content.winfo_children():
+        w.destroy()
+
+    txs = state["transactions"]
+    if not txs:
+        empty = tk.Frame(content, bg=COLORS["surface"], padx=PAD_XL, pady=PAD_XL,
+                         highlightbackground=COLORS["border"], highlightthickness=1)
+        empty.pack(fill="both", expand=True, pady=PAD_MD)
+        tk.Label(
+            empty,
+            text="No transactions yet",
+            bg=COLORS["surface"], fg=COLORS["text"],
+            font=FONT_HEADING,
+        ).pack(pady=(PAD_LG, PAD_SM))
+        tk.Label(
+            empty,
+            text="Add a few expenses on the Add tab to see spending insights here.",
+            bg=COLORS["surface"], fg=COLORS["text_muted"],
+            font=(FONT_FAMILY, FONT_SIZE), wraplength=400, justify="center",
+        ).pack()
+        _bind_mousewheel_to_canvas_and_content(canvas, content)
+        return
+
+    total = total_spending(txs)
+    n_tx = len(txs)
+    avg_day = average_daily_spending(txs)
+    t7 = trend_last_n_days(txs, 7)
+    t30 = trend_last_n_days(txs, 30)
+
+    hero = tk.Frame(content, bg=COLORS["bg"])
+    hero.pack(fill="x")
+    hero.grid_columnconfigure(0, weight=1)
+    hero.grid_columnconfigure(1, weight=1)
+    hero.grid_columnconfigure(2, weight=1)
+
+    def _fmt_hk(x: float) -> str:
+        return f"HK$ {x:,.2f}"
+
+    _kpi_card(hero, "Total spending", _fmt_hk(total), f"{n_tx} transactions").grid(row=0, column=0, sticky="nsew", padx=(0, PAD_SM))
+    _kpi_card(hero, "Avg. per active day", _fmt_hk(avg_day), "Days with at least one expense").grid(row=0, column=1, sticky="nsew", padx=PAD_SM)
+    _kpi_card(hero, "Last 7 days", _fmt_hk(t7), "Rolling window").grid(row=0, column=2, sticky="nsew", padx=(PAD_SM, 0))
+
+    _section_header(content, "Spending by category")
+
+    cats = by_category(txs)
+    for cat, amt in sorted(cats.items(), key=lambda x: x[1], reverse=True):
+        pct = (amt / total * 100.0) if total else 0.0
+        _category_row(content, cat, amt, pct)
+
+    _section_header(content, "Momentum")
+    trend_card = tk.Frame(content, bg=COLORS["surface"], highlightbackground=COLORS["border"], highlightthickness=1)
+    trend_card.pack(fill="x", pady=(0, PAD_SM))
+    inner_t = tk.Frame(trend_card, bg=COLORS["surface"], padx=PAD_LG, pady=PAD_MD)
+    inner_t.pack(fill="x")
+    _mini_stat_row(inner_t, "Last 7 days (from latest activity)", t7)
+    _mini_stat_row(inner_t, "Last 30 days (from latest activity)", t30)
+
+    _section_header(content, "Top categories")
+    top = top_categories(txs, 3)
+    medals = ("🥇", "🥈", "🥉")
+    top_box = tk.Frame(content, bg=COLORS["bg"])
+    top_box.pack(fill="x")
+    for i, (cat, amt) in enumerate(top):
+        row = tk.Frame(top_box, bg=COLORS["surface"], highlightbackground=COLORS["border"], highlightthickness=1)
+        row.pack(fill="x", pady=PAD_SM)
+        inn = tk.Frame(row, bg=COLORS["surface"], padx=PAD_MD, pady=PAD_SM)
+        inn.pack(fill="x")
+        badge = medals[i] if i < len(medals) else "•"
+        tk.Label(
+            inn, text=f"{badge}  {cat.capitalize()}", bg=COLORS["surface"], fg=COLORS["text"],
+            font=(FONT_FAMILY, FONT_SIZE + 1, "bold"),
+        ).pack(side="left")
+        tk.Label(
+            inn, text=f"HK$ {amt:,.2f}", bg=COLORS["surface"], fg=COLORS["accent"],
+            font=(FONT_FAMILY, FONT_SIZE, "bold"),
+        ).pack(side="right")
+
+    monthly = by_period(txs, "monthly")
+    if monthly:
+        _section_header(content, "Recent months")
+        for key in sorted(monthly.keys())[-3:]:
+            _mini_stat_row(content, str(key), monthly[key])
+
+    _bind_mousewheel_to_canvas_and_content(canvas, content)
+
+
+def create_summary_tab(parent: ttk.Notebook, state: dict, reload_data: Callable) -> ttk.Frame:
+    """Summary tab: KPI cards, category bars, trends."""
+    outer = ttk.Frame(parent, padding=PAD_LG)
+
+    scroll_wrap = tk.Frame(outer, bg=COLORS["bg"])
+    scroll_wrap.pack(fill="both", expand=True)
+    canvas = tk.Canvas(scroll_wrap, bg=COLORS["bg"], highlightthickness=0)
+    vsb = ttk.Scrollbar(scroll_wrap, orient="vertical", command=canvas.yview)
+    content = tk.Frame(canvas, bg=COLORS["bg"])
+    inner_win = canvas.create_window((0, 0), window=content, anchor="nw")
+
+    def on_canvas_configure(event: Any) -> None:
+        canvas.itemconfigure(inner_win, width=event.width)
+
+    canvas.bind("<Configure>", on_canvas_configure)
+
+    def on_content_configure(_event: Any) -> None:
+        canvas.configure(scrollregion=canvas.bbox("all"))
+
+    content.bind("<Configure>", on_content_configure)
+    canvas.configure(yscrollcommand=vsb.set)
+    canvas.pack(side="left", fill="both", expand=True)
+    vsb.pack(side="right", fill="y")
+
+    ttk.Separator(outer, orient="horizontal").pack(fill="x", pady=PAD_MD)
+    ttk.Button(
+        outer,
+        text="Refresh",
+        command=lambda: _refresh_summary_dashboard(content, state, reload_data, canvas),
+    ).pack(pady=PAD_SM)
+
+    _refresh_summary_dashboard(content, state, reload_data, canvas)
+    return outer
 
 
 def create_add_tab(parent: ttk.Notebook, state: dict, save_data: Callable, reload_data: Callable) -> ttk.Frame:
@@ -355,9 +583,8 @@ def create_transactions_tab(
             cats.add(t.category)
         return [""] + sorted(cats)
 
-    # Filters in a card
+    # Filters in a card (packed after tree + footer so the button bar stays visible when resized)
     filter_card = tk.Frame(frame, bg=COLORS["surface"], relief="flat", padx=PAD_MD, pady=PAD_MD, highlightbackground=COLORS["border"], highlightthickness=1)
-    filter_card.pack(fill="x")
     row1 = tk.Frame(filter_card, bg=COLORS["surface"])
     row1.pack(fill="x")
     tk.Label(row1, text="Date:", bg=COLORS["surface"], fg=COLORS["text"], font=(FONT_FAMILY, FONT_SIZE)).pack(side="left", padx=(0, PAD_SM))
@@ -374,11 +601,10 @@ def create_transactions_tab(
     desc_filter = ttk.Entry(row2, textvariable=desc_filter_var, width=40)
     desc_filter.pack(side="left", fill="x", expand=True)
 
-    ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=PAD_MD)
+    sep_below_filter = ttk.Separator(frame, orient="horizontal")
 
     # Treeview + scrollbars in card
     tree_card = tk.Frame(frame, bg=COLORS["surface"], relief="flat", padx=PAD_MD, pady=PAD_MD, highlightbackground=COLORS["border"], highlightthickness=1)
-    tree_card.pack(fill="both", expand=True)
     tree_inner = tk.Frame(tree_card, bg=COLORS["surface"])
     tree_inner.pack(fill="both", expand=True)
     columns = ("date", "amount", "category", "description")
@@ -426,7 +652,7 @@ def create_transactions_tab(
 
     _bind_mousewheel(tree)
 
-    ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=PAD_MD)
+    sep_below_tree = ttk.Separator(frame, orient="horizontal")
 
     def apply_filters():
         cat_filter["values"] = category_choices()
@@ -556,9 +782,14 @@ def create_transactions_tab(
         dlg.protocol("WM_DELETE_WINDOW", close)
 
     btn_row_tx = tk.Frame(frame)
-    btn_row_tx.pack(pady=PAD_SM)
     ttk.Button(btn_row_tx, text="Refresh from file", command=refresh).pack(side="left", padx=(0, PAD_SM))
     ttk.Button(btn_row_tx, text="Edit selected", command=edit_selected).pack(side="left")
+    # Same pack pattern as Summary: pin footer with side=bottom, header with side=top, list expands in middle.
+    btn_row_tx.pack(side="bottom", fill="x", pady=PAD_SM)
+    sep_below_tree.pack(side="bottom", fill="x", pady=(0, PAD_MD))
+    filter_card.pack(side="top", fill="x")
+    sep_below_filter.pack(side="top", fill="x", pady=PAD_MD)
+    tree_card.pack(fill="both", expand=True)
     apply_filters()
 
     def on_tab_shown() -> None:

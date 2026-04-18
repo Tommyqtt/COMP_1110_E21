@@ -136,14 +136,6 @@ def format_summary(transactions: List[Transaction]) -> str:
             lines.append(f"    {key}    HK$ {monthly[key]:>10.2f}")
     lines.append(sep)
 
-    # Weekly breakdown (most recent 4 weeks)
-    weekly = by_period(transactions, "weekly")
-    if weekly:
-        lines.append("  Weekly breakdown (recent 4 weeks):")
-        for key in sorted(weekly.keys())[-4:]:
-            lines.append(f"    {key}   HK$ {weekly[key]:>10.2f}")
-    lines.append(sep)
-
     # Trend windows 
     t7 = trend_last_n_days(transactions, 7)
     t30 = trend_last_n_days(transactions, 30)

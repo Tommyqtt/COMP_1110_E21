@@ -121,7 +121,7 @@ A design system (colors, typography, spacing) is applied across all tabs. See [U
 ├── alerts.py          # Rule-based alerts
 ├── portfolio.py       # MockWealth simulation
 ├── assets.csv         # Mock asset universe
-├── transactions.csv   # Sample / user data (cwd-relative when running main.py)
+├── transactions.csv   # Bundled sample spending (cwd-relative; safe to edit or replace)
 ├── budgets.csv        # Caps + % rules + settings (next to data.py)
 ├── ARCHITECTURE.md    # Design notes
 ├── UI_DESIGN.md       # GUI design tokens

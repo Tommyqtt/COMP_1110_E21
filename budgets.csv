@@ -2,7 +2,6 @@ row_type,v1,v2,v3,v4
 cap,food,weekly,150,overspend
 cap,transport,monthly,300,overspend
 cap,subscriptions,daily,1,overspend
-pct,food,25.0,60.0,
 setting,consecutive_overspend_days,3,,
 setting,subscription_creep_threshold_pct,20.0,,
 setting,uncategorized_min_transactions,1,,

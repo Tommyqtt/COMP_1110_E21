@@ -21,6 +21,3 @@ Thumbs.db
 # Environment / secrets
 .env
 .env.local
-
-# Local testing data (keeps real spending / test edits out of version control)
-transactions.csv

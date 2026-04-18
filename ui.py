@@ -221,7 +221,7 @@ def run_gui() -> None:
     nb.add(add_frame, text="Add")
 
     # Transactions tab
-    tx_frame, refresh_transactions_view = create_transactions_tab(nb, state, reload_data)
+    tx_frame, refresh_transactions_view = create_transactions_tab(nb, state, reload_data, save_data)
     nb.add(tx_frame, text="Transactions")
 
     def on_notebook_tab_change(_event=None) -> None:
@@ -336,7 +336,12 @@ def create_add_tab(parent: ttk.Notebook, state: dict, save_data: Callable, reloa
     return frame
 
 
-def create_transactions_tab(parent: ttk.Notebook, state: dict, reload_data: Callable) -> ttk.Frame:
+def create_transactions_tab(
+    parent: ttk.Notebook,
+    state: dict,
+    reload_data: Callable,
+    save_data: Callable,
+) -> ttk.Frame:
     """Transactions tab: scrollable list with live filters."""
     frame = ttk.Frame(parent, padding=PAD_LG)
 
@@ -395,6 +400,9 @@ def create_transactions_tab(parent: ttk.Notebook, state: dict, reload_data: Call
     tree_inner.grid_rowconfigure(0, weight=1)
     tree_inner.grid_columnconfigure(0, weight=1)
 
+    # Row order matches the treeview (filtered, sorted); used to resolve selection for edit
+    last_displayed: List[Transaction] = []
+
     def _bind_mousewheel(widget: tk.Widget) -> None:
         def on_wheel(event) -> Optional[str]:
             delta = 0
@@ -424,6 +432,7 @@ def create_transactions_tab(parent: ttk.Notebook, state: dict, reload_data: Call
         cat_filter["values"] = category_choices()
         for item in tree.get_children():
             tree.delete(item)
+        last_displayed.clear()
         tx_list = list(state["transactions"])
         date_prefix = date_filter_var.get().strip()
         cat_str = cat_filter_var.get().strip().lower()
@@ -434,8 +443,9 @@ def create_transactions_tab(parent: ttk.Notebook, state: dict, reload_data: Call
             tx_list = [t for t in tx_list if t.category.startswith(cat_str)]
         if desc_q:
             tx_list = [t for t in tx_list if desc_q in (t.description or "").lower()]
-        for t in sorted(tx_list, key=lambda x: (x.date, x.amount)):
-            tree.insert("", "end", values=(t.date, f"{abs(t.amount):.2f}", t.category, t.description))
+        for i, t in enumerate(sorted(tx_list, key=lambda x: (x.date, x.amount))):
+            last_displayed.append(t)
+            tree.insert("", "end", iid=str(i), values=(t.date, f"{abs(t.amount):.2f}", t.category, t.description))
 
     def refresh():
         """Reload from disk and reapply filters."""
@@ -458,7 +468,97 @@ def create_transactions_tab(parent: ttk.Notebook, state: dict, reload_data: Call
     cat_filter_var.trace_add("write", lambda *_: schedule_filter())
     cat_filter.bind("<<ComboboxSelected>>", lambda _e: apply_filters())
 
-    ttk.Button(frame, text="Refresh from file", command=refresh).pack(pady=PAD_SM)
+    def edit_selected():
+        sel = tree.selection()
+        if not sel:
+            return
+        try:
+            row_i = int(sel[0])
+        except (ValueError, IndexError):
+            return
+        if not (0 <= row_i < len(last_displayed)):
+            return
+        t_orig = last_displayed[row_i]
+        try:
+            tx_index = state["transactions"].index(t_orig)
+        except ValueError:
+            return
+
+        dlg = tk.Toplevel(parent)
+        dlg.title("Edit transaction")
+        dlg.resizable(False, False)
+        dlg.configure(bg=COLORS["bg"])
+        top = parent.winfo_toplevel()
+        dlg.transient(top)
+        dlg.grab_set()
+
+        card = tk.Frame(dlg, bg=COLORS["surface"], padx=PAD_LG, pady=PAD_LG,
+                        highlightbackground=COLORS["border"], highlightthickness=1)
+        card.pack(fill="both", expand=True, padx=PAD_MD, pady=PAD_MD)
+
+        ttk.Label(card, text="Date (YYYY-MM-DD):").pack(anchor="w")
+        date_var = tk.StringVar(value=t_orig.date)
+        date_row = tk.Frame(card, bg=COLORS["surface"])
+        date_row.pack(anchor="w", pady=(0, PAD_MD))
+        ttk.Entry(date_row, textvariable=date_var, width=14).pack(side="left")
+        ttk.Button(date_row, text="📅", width=3, command=lambda: show_date_picker(card, date_var)).pack(side="left", padx=(PAD_SM, 0))
+
+        ttk.Label(card, text="Amount (HKD):").pack(anchor="w")
+        amount_var = tk.StringVar(value=f"{abs(t_orig.amount):.2f}")
+        ttk.Entry(card, textvariable=amount_var, width=15).pack(anchor="w", pady=(0, PAD_MD))
+
+        ttk.Label(card, text="Category:").pack(anchor="w")
+        cat_edit_var = tk.StringVar(value=t_orig.category)
+        cat_edit = ttk.Combobox(card, textvariable=cat_edit_var, values=sorted(category_choices())[1:], width=20)
+        cat_edit.pack(anchor="w", pady=(0, PAD_MD))
+
+        ttk.Label(card, text="Description:").pack(anchor="w")
+        desc_var = tk.StringVar(value=t_orig.description)
+        ttk.Entry(card, textvariable=desc_var, width=40).pack(anchor="w", pady=(0, PAD_LG))
+
+        msg = tk.Label(card, text="", bg=COLORS["surface"], fg=COLORS["error"], font=(FONT_FAMILY, FONT_SIZE))
+
+        def close():
+            dlg.grab_release()
+            dlg.destroy()
+
+        def save_edit():
+            date_str = date_var.get().strip()
+            if not validate_date(date_str):
+                msg.config(text="Invalid date. Use YYYY-MM-DD.")
+                return
+            amt = validate_amount(amount_var.get().strip())
+            if amt is None:
+                msg.config(text="Invalid amount. Enter a positive number.")
+                return
+            category = cat_edit_var.get().strip().lower()
+            if not category:
+                msg.config(text="Enter a category.")
+                return
+            if not validate_category(category):
+                msg.config(text="Invalid category.")
+                return
+            state["transactions"][tx_index] = Transaction(
+                date=date_str,
+                amount=-amt,
+                category=category,
+                description=desc_var.get().strip() or "",
+            )
+            save_data()
+            close()
+            apply_filters()
+
+        btn_row = tk.Frame(card, bg=COLORS["surface"])
+        btn_row.pack(fill="x")
+        ttk.Button(btn_row, text="Save", command=save_edit).pack(side="right", padx=(PAD_SM, 0))
+        ttk.Button(btn_row, text="Cancel", command=close).pack(side="right")
+        msg.pack(anchor="w", pady=(PAD_SM, 0))
+        dlg.protocol("WM_DELETE_WINDOW", close)
+
+    btn_row_tx = tk.Frame(frame)
+    btn_row_tx.pack(pady=PAD_SM)
+    ttk.Button(btn_row_tx, text="Refresh from file", command=refresh).pack(side="left", padx=(0, PAD_SM))
+    ttk.Button(btn_row_tx, text="Edit selected", command=edit_selected).pack(side="left")
     apply_filters()
 
     def on_tab_shown() -> None:
@@ -563,7 +663,48 @@ def create_portfolio_tab(parent: ttk.Notebook) -> ttk.Frame:
     ttk.Button(frame, text="Run Simulation", command=run_sim).pack(pady=PAD_SM)
     output_card = tk.Frame(frame, bg=COLORS["surface"], relief="flat", padx=PAD_LG, pady=PAD_LG, highlightbackground=COLORS["border"], highlightthickness=1)
     output_card.pack(fill="both", expand=True)
-    output_text = tk.Text(output_card, wrap="word", height=10, width=52, state="disabled", bg=COLORS["surface"], fg=COLORS["text"],
-                         font=(FONT_FAMILY, FONT_SIZE), relief="flat", padx=PAD_MD, pady=PAD_MD)
-    output_text.pack(fill="both", expand=True)
+    text_inner = tk.Frame(output_card, bg=COLORS["surface"])
+    text_inner.pack(fill="both", expand=True)
+    output_text = tk.Text(
+        text_inner,
+        wrap="word",
+        height=10,
+        width=52,
+        state="disabled",
+        bg=COLORS["surface"],
+        fg=COLORS["text"],
+        font=(FONT_FAMILY, FONT_SIZE),
+        relief="flat",
+        padx=PAD_MD,
+        pady=PAD_MD,
+    )
+    out_vsb = ttk.Scrollbar(text_inner, orient="vertical", command=output_text.yview)
+    output_text.configure(yscrollcommand=out_vsb.set)
+    output_text.grid(row=0, column=0, sticky="nsew")
+    out_vsb.grid(row=0, column=1, sticky="ns")
+    text_inner.grid_rowconfigure(0, weight=1)
+    text_inner.grid_columnconfigure(0, weight=1)
+
+    def _bind_output_wheel(widget: tk.Widget) -> None:
+        def on_wheel(event) -> Optional[str]:
+            delta = 0
+            if event.num == 5:
+                delta = 1
+            elif event.num == 4:
+                delta = -1
+            elif getattr(event, "delta", 0):
+                if sys.platform == "darwin":
+                    delta = -event.delta
+                else:
+                    delta = -1 if event.delta > 0 else 1
+            if delta:
+                output_text.yview_scroll(delta, "units")
+                return "break"
+            return None
+
+        widget.bind("<MouseWheel>", on_wheel)
+        widget.bind("<Button-4>", on_wheel)
+        widget.bind("<Button-5>", on_wheel)
+
+    _bind_output_wheel(output_text)
     return frame

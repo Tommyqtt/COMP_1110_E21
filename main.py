@@ -101,6 +101,73 @@ def delete_transaction_interactive(transactions: List[Transaction]) -> None:
     print(f"  Deleted: {removed.date} | HK$ {abs(removed.amount):.2f} | {removed.category}")
 
 
+def edit_transaction_interactive(transactions: List[Transaction]) -> None:
+    """List transactions with index numbers and let the user edit one by index."""
+    if not transactions:
+        print("  No transactions to edit.")
+        return
+
+    print("\n--- Edit Transaction ---")
+    for i, t in enumerate(transactions):
+        print(f"  [{i + 1}] {t.date} | HK$ {abs(t.amount):.2f} | {t.category} | {t.description}")
+
+    raw = input("Enter index to edit (or press Enter to cancel): ").strip()
+    if not raw:
+        return
+    try:
+        idx = int(raw) - 1
+        if not (0 <= idx < len(transactions)):
+            print("  Index out of range.")
+            return
+    except ValueError:
+        print("  Invalid input.")
+        return
+
+    t = transactions[idx]
+
+    while True:
+        date_str = input(f"Date (YYYY-MM-DD) [current: {t.date}, Enter to keep]: ").strip()
+        if not date_str:
+            date_str = t.date
+            break
+        if validate_date(date_str):
+            break
+        print("  Invalid date. Use YYYY-MM-DD.")
+
+    while True:
+        amount_str = input(f"Amount (HKD) [current: {abs(t.amount):.2f}, Enter to keep]: ").strip()
+        if not amount_str:
+            amt = abs(t.amount)
+            break
+        parsed = validate_amount(amount_str)
+        if parsed is not None:
+            amt = parsed
+            break
+        print("  Invalid amount. Enter a positive number.")
+
+    print(f"  Categories: {', '.join(DEFAULT_CATEGORIES)}")
+    while True:
+        category = input(f"Category [current: {t.category}, Enter to keep]: ").strip().lower()
+        if not category:
+            category = t.category
+            break
+        if validate_category(category):
+            break
+        print("  Invalid category. Use one from the list or a valid word.")
+
+    desc = input(f"Description [current: {t.description}, Enter to keep]: ").strip()
+    if not desc:
+        desc = t.description
+
+    transactions[idx] = Transaction(
+        date=date_str,
+        amount=-amt,
+        category=category,
+        description=desc,
+    )
+    print("  Transaction updated.")
+
+
 def view_transactions(
     transactions: List[Transaction],
     filter_date: str = None,
@@ -260,7 +327,8 @@ def menu() -> None:
         print("  2. View all transactions")
         print("  3. View by date")
         print("  4. View by category")
-        print("  d. Delete a transaction")         
+        print("  d. Delete a transaction")
+        print("  m. Edit a transaction")
         print("  5. Summaries")
         print("  6. Alerts")
         print("  7. Configure budget rule (cap)")
@@ -293,6 +361,8 @@ def menu() -> None:
                 view_transactions(transactions, filter_category=c)
         elif choice == "d":
             delete_transaction_interactive(transactions)
+        elif choice == "m":
+            edit_transaction_interactive(transactions)
         elif choice == "5":
             show_summaries(transactions)
         elif choice == "6":

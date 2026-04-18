@@ -3,10 +3,12 @@ Personal Budget Assistant - Tkinter GUI
 COMP1110 E21 - Topic A
 """
 
+import calendar as cal_module
+import sys
 import tkinter as tk
 from tkinter import ttk
 from datetime import datetime
-from typing import List, Callable
+from typing import Any, Callable, List, Optional
 
 # Design system: colors, spacing, typography
 COLORS = {
@@ -47,6 +49,117 @@ import portfolio
 
 TRANSACTIONS_FILE = "transactions.csv"
 BUDGETS_FILE = "budgets.csv"
+
+_MONTH_NAMES = (
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+)
+
+
+def _parse_ymd(s: str) -> Optional[tuple]:
+    """Return (year, month, day) if s is valid YYYY-MM-DD, else None."""
+    s = (s or "").strip()
+    if len(s) != 10:
+        return None
+    try:
+        t = datetime.strptime(s, "%Y-%m-%d")
+        return t.year, t.month, t.day
+    except ValueError:
+        return None
+
+
+def show_date_picker(parent: tk.Widget, target_var: tk.StringVar) -> None:
+    """Small calendar popup; sets target_var to YYYY-MM-DD when a day is chosen."""
+    parsed = _parse_ymd(target_var.get())
+    if parsed:
+        cur_y, cur_m, cur_d = parsed
+    else:
+        now = datetime.now()
+        cur_y, cur_m, cur_d = now.year, now.month, now.day
+
+    win = tk.Toplevel(parent)
+    win.title("Pick date")
+    win.resizable(False, False)
+    win.configure(bg=COLORS["surface"])
+    top = parent.winfo_toplevel()
+    win.transient(top)
+    win.grab_set()
+
+    nav = tk.Frame(win, bg=COLORS["surface"])
+    nav.pack(fill="x", padx=PAD_SM, pady=PAD_SM)
+
+    month_holder = {"y": cur_y, "m": cur_m}
+
+    header = tk.Label(nav, text="", bg=COLORS["surface"], fg=COLORS["text"], font=(FONT_FAMILY, FONT_SIZE, "bold"))
+
+    def update_header():
+        header.config(text=f"{_MONTH_NAMES[month_holder['m'] - 1]} {month_holder['y']}")
+
+    def shift_month(delta: int) -> None:
+        y, m = month_holder["y"], month_holder["m"]
+        m += delta
+        while m < 1:
+            m += 12
+            y -= 1
+        while m > 12:
+            m -= 12
+            y += 1
+        month_holder["y"], month_holder["m"] = y, m
+        update_header()
+        rebuild_days()
+
+    ttk.Button(nav, text="◀", width=3, command=lambda: shift_month(-1)).pack(side="left", padx=2)
+    header.pack(side="left", expand=True)
+    ttk.Button(nav, text="▶", width=3, command=lambda: shift_month(1)).pack(side="left", padx=2)
+
+    cal_area = tk.Frame(win, bg=COLORS["surface"])
+    cal_area.pack(fill="both", expand=True, padx=PAD_SM, pady=(0, PAD_SM))
+    day_buttons: List[tk.Widget] = []
+
+    def rebuild_days():
+        for b in day_buttons:
+            b.destroy()
+        day_buttons.clear()
+        for c in range(7):
+            wd = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")[c]
+            tk.Label(cal_area, text=wd, bg=COLORS["surface"], fg=COLORS["text_muted"], font=(FONT_FAMILY, FONT_SIZE - 1)).grid(row=0, column=c, padx=1, pady=1)
+        y, m = month_holder["y"], month_holder["m"]
+        weeks = cal_module.monthcalendar(y, m)
+        for r, week in enumerate(weeks, start=1):
+            for c, day in enumerate(week):
+                if day == 0:
+                    tk.Label(cal_area, text="", bg=COLORS["surface"]).grid(row=r, column=c, padx=1, pady=1)
+                    continue
+
+                def pick(d: int = day) -> None:
+                    target_var.set(f"{y}-{m:02d}-{d:02d}")
+                    win.grab_release()
+                    win.destroy()
+
+                b = ttk.Button(cal_area, text=str(day), width=3, command=pick)
+                b.grid(row=r, column=c, padx=1, pady=1)
+                day_buttons.append(b)
+
+    update_header()
+    rebuild_days()
+
+    btn_row = tk.Frame(win, bg=COLORS["surface"])
+    btn_row.pack(fill="x", padx=PAD_SM, pady=(0, PAD_SM))
+
+    def today():
+        n = datetime.now()
+        month_holder["y"], month_holder["m"] = n.year, n.month
+        update_header()
+        rebuild_days()
+
+    ttk.Button(btn_row, text="This month", command=today).pack(side="left")
+
+    def cancel():
+        win.grab_release()
+        win.destroy()
+
+    ttk.Button(btn_row, text="Cancel", command=cancel).pack(side="right")
+    win.protocol("WM_DELETE_WINDOW", cancel)
 
 
 def setup_styles(root: tk.Tk) -> ttk.Style:
@@ -108,8 +221,17 @@ def run_gui() -> None:
     nb.add(add_frame, text="Add")
 
     # Transactions tab
-    tx_frame = create_transactions_tab(nb, state, reload_data)
+    tx_frame, refresh_transactions_view = create_transactions_tab(nb, state, reload_data)
     nb.add(tx_frame, text="Transactions")
+
+    def on_notebook_tab_change(_event=None) -> None:
+        try:
+            if nb.tab(nb.select(), "text") == "Transactions":
+                refresh_transactions_view()
+        except tk.TclError:
+            pass
+
+    nb.bind("<<NotebookTabChanged>>", on_notebook_tab_change)
 
     # Alerts tab
     alerts_frame = create_alerts_tab(nb, state, reload_data)
@@ -157,8 +279,10 @@ def create_add_tab(parent: ttk.Notebook, state: dict, save_data: Callable, reloa
     # Date
     ttk.Label(card, text="Date (YYYY-MM-DD):").pack(anchor="w")
     date_var = tk.StringVar(value=datetime.now().strftime("%Y-%m-%d"))
-    date_entry = ttk.Entry(card, textvariable=date_var, width=15)
-    date_entry.pack(anchor="w", pady=(0, PAD_MD))
+    date_row = tk.Frame(card, bg=COLORS["surface"])
+    date_row.pack(anchor="w", pady=(0, PAD_MD))
+    ttk.Entry(date_row, textvariable=date_var, width=14).pack(side="left")
+    ttk.Button(date_row, text="📅", width=3, command=lambda: show_date_picker(card, date_var)).pack(side="left", padx=(PAD_SM, 0))
 
     # Amount
     ttk.Label(card, text="Amount (HKD):").pack(anchor="w")
@@ -213,57 +337,135 @@ def create_add_tab(parent: ttk.Notebook, state: dict, save_data: Callable, reloa
 
 
 def create_transactions_tab(parent: ttk.Notebook, state: dict, reload_data: Callable) -> ttk.Frame:
-    """Transactions tab: list with optional filter."""
+    """Transactions tab: scrollable list with live filters."""
     frame = ttk.Frame(parent, padding=PAD_LG)
+
+    date_filter_var = tk.StringVar()
+    cat_filter_var = tk.StringVar()
+    desc_filter_var = tk.StringVar()
+
+    def category_choices() -> List[str]:
+        cats = {c for c in DEFAULT_CATEGORIES}
+        for t in state["transactions"]:
+            cats.add(t.category)
+        return [""] + sorted(cats)
 
     # Filters in a card
     filter_card = tk.Frame(frame, bg=COLORS["surface"], relief="flat", padx=PAD_MD, pady=PAD_MD, highlightbackground=COLORS["border"], highlightthickness=1)
     filter_card.pack(fill="x")
-    filter_frame = tk.Frame(filter_card, bg=COLORS["surface"])
-    filter_frame.pack(fill="x")
-    tk.Label(filter_frame, text="Date:", bg=COLORS["surface"], fg=COLORS["text"], font=(FONT_FAMILY, FONT_SIZE)).pack(side="left", padx=(0, PAD_SM))
-    date_filter = ttk.Entry(filter_frame, width=12)
-    date_filter.pack(side="left", padx=(0, PAD_MD))
-    tk.Label(filter_frame, text="Category:", bg=COLORS["surface"], fg=COLORS["text"], font=(FONT_FAMILY, FONT_SIZE)).pack(side="left", padx=(0, PAD_SM))
-    cat_filter = ttk.Combobox(filter_frame, values=[""] + DEFAULT_CATEGORIES, width=12)
+    row1 = tk.Frame(filter_card, bg=COLORS["surface"])
+    row1.pack(fill="x")
+    tk.Label(row1, text="Date:", bg=COLORS["surface"], fg=COLORS["text"], font=(FONT_FAMILY, FONT_SIZE)).pack(side="left", padx=(0, PAD_SM))
+    date_filter = ttk.Entry(row1, textvariable=date_filter_var, width=11)
+    date_filter.pack(side="left", padx=(0, PAD_SM))
+    ttk.Button(row1, text="📅", width=3, command=lambda: show_date_picker(filter_card, date_filter_var)).pack(side="left", padx=(0, PAD_MD))
+    tk.Label(row1, text="Category:", bg=COLORS["surface"], fg=COLORS["text"], font=(FONT_FAMILY, FONT_SIZE)).pack(side="left", padx=(0, PAD_SM))
+    cat_filter = ttk.Combobox(row1, textvariable=cat_filter_var, values=category_choices(), width=14, state="normal")
     cat_filter.pack(side="left", padx=(0, PAD_MD))
+
+    row2 = tk.Frame(filter_card, bg=COLORS["surface"])
+    row2.pack(fill="x", pady=(PAD_SM, 0))
+    tk.Label(row2, text="Search description:", bg=COLORS["surface"], fg=COLORS["text"], font=(FONT_FAMILY, FONT_SIZE)).pack(side="left", padx=(0, PAD_SM))
+    desc_filter = ttk.Entry(row2, textvariable=desc_filter_var, width=40)
+    desc_filter.pack(side="left", fill="x", expand=True)
 
     ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=PAD_MD)
 
-    # Treeview in card
+    # Treeview + scrollbars in card
     tree_card = tk.Frame(frame, bg=COLORS["surface"], relief="flat", padx=PAD_MD, pady=PAD_MD, highlightbackground=COLORS["border"], highlightthickness=1)
     tree_card.pack(fill="both", expand=True)
+    tree_inner = tk.Frame(tree_card, bg=COLORS["surface"])
+    tree_inner.pack(fill="both", expand=True)
     columns = ("date", "amount", "category", "description")
-    tree = ttk.Treeview(tree_card, columns=columns, show="headings", height=14, selectmode="browse")
+    tree = ttk.Treeview(tree_inner, columns=columns, show="headings", height=12, selectmode="browse")
     tree.heading("date", text="Date")
     tree.heading("amount", text="Amount (HKD)")
     tree.heading("category", text="Category")
     tree.heading("description", text="Description")
-    tree.column("date", width=100)
-    tree.column("amount", width=90)
-    tree.column("category", width=100)
-    tree.column("description", width=250)
-    tree.pack(fill="both", expand=True)
+    tree.column("date", width=100, minwidth=80)
+    tree.column("amount", width=90, minwidth=70)
+    tree.column("category", width=100, minwidth=80)
+    tree.column("description", width=220, minwidth=100)
+    vsb = ttk.Scrollbar(tree_inner, orient="vertical", command=tree.yview)
+    hsb = ttk.Scrollbar(tree_inner, orient="horizontal", command=tree.xview)
+    tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+    tree.grid(row=0, column=0, sticky="nsew")
+    vsb.grid(row=0, column=1, sticky="ns")
+    hsb.grid(row=1, column=0, sticky="ew")
+    tree_inner.grid_rowconfigure(0, weight=1)
+    tree_inner.grid_columnconfigure(0, weight=1)
+
+    def _bind_mousewheel(widget: tk.Widget) -> None:
+        def on_wheel(event) -> Optional[str]:
+            delta = 0
+            if event.num == 5:
+                delta = 1
+            elif event.num == 4:
+                delta = -1
+            elif getattr(event, "delta", 0):
+                if sys.platform == "darwin":
+                    delta = -event.delta
+                else:
+                    delta = -1 if event.delta > 0 else 1
+            if delta:
+                tree.yview_scroll(delta, "units")
+                return "break"
+            return None
+
+        widget.bind("<MouseWheel>", on_wheel)
+        widget.bind("<Button-4>", on_wheel)
+        widget.bind("<Button-5>", on_wheel)
+
+    _bind_mousewheel(tree)
 
     ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=PAD_MD)
 
-    def refresh():
-        reload_data()
+    def apply_filters():
+        cat_filter["values"] = category_choices()
         for item in tree.get_children():
             tree.delete(item)
-        tx_list = state["transactions"]
-        date_str = date_filter.get().strip()
-        cat_str = cat_filter.get().strip().lower()
-        if date_str:
-            tx_list = [t for t in tx_list if t.date == date_str]
+        tx_list = list(state["transactions"])
+        date_prefix = date_filter_var.get().strip()
+        cat_str = cat_filter_var.get().strip().lower()
+        desc_q = desc_filter_var.get().strip().lower()
+        if date_prefix:
+            tx_list = [t for t in tx_list if t.date.startswith(date_prefix)]
         if cat_str:
-            tx_list = [t for t in tx_list if t.category == cat_str]
+            tx_list = [t for t in tx_list if t.category.startswith(cat_str)]
+        if desc_q:
+            tx_list = [t for t in tx_list if desc_q in (t.description or "").lower()]
         for t in sorted(tx_list, key=lambda x: (x.date, x.amount)):
             tree.insert("", "end", values=(t.date, f"{abs(t.amount):.2f}", t.category, t.description))
 
-    ttk.Button(frame, text="Refresh", command=refresh).pack(pady=PAD_SM)
-    refresh()
-    return frame
+    def refresh():
+        """Reload from disk and reapply filters."""
+        reload_data()
+        apply_filters()
+
+    debounce_id: Optional[Any] = None
+
+    def schedule_filter(*_args) -> None:
+        nonlocal debounce_id
+        if debounce_id is not None:
+            try:
+                frame.after_cancel(debounce_id)
+            except tk.TclError:
+                pass
+        debounce_id = frame.after(120, apply_filters)
+
+    date_filter_var.trace_add("write", lambda *_: schedule_filter())
+    desc_filter_var.trace_add("write", lambda *_: schedule_filter())
+    cat_filter_var.trace_add("write", lambda *_: schedule_filter())
+    cat_filter.bind("<<ComboboxSelected>>", lambda _e: apply_filters())
+
+    ttk.Button(frame, text="Refresh from file", command=refresh).pack(pady=PAD_SM)
+    apply_filters()
+
+    def on_tab_shown() -> None:
+        """Resync list from memory (e.g. after adding on another tab)."""
+        apply_filters()
+
+    return frame, on_tab_shown
 
 
 def create_alerts_tab(parent: ttk.Notebook, state: dict, reload_data: Callable) -> ttk.Frame:

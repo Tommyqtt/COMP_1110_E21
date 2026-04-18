@@ -4,36 +4,6 @@ COMP1110 E21 - Topic A: Personal Budget and Spending Assistant, with MockWealth 
 
 Pure Python, text-based CLI and Tkinter GUI. No external dependencies.
 
-## Joining this repository (group members)
-
-1. **Get access**  
-   Ask the repository owner to add you as a collaborator: on GitHub open the repo → **Settings** → **Collaborators** (or **Manage access**) → **Add people**, and send the invite to your GitHub account. Accept the invitation from the email or from [https://github.com/notifications](https://github.com/notifications).
-
-2. **Clone the project** (after you can see the repo on GitHub), using either HTTPS or SSH:
-
-   ```bash
-   # HTTPS (works everywhere; GitHub will prompt for login or a personal access token)
-   git clone https://github.com/Tommyqtt/COMP_1110_E21.git
-   cd COMP_1110_E21
-   ```
-
-   ```bash
-   # SSH (if you have SSH keys added to GitHub)
-   git clone git@github.com:Tommyqtt/COMP_1110_E21.git
-   cd COMP_1110_E21
-   ```
-
-3. **Optional: set your name and email** for commits (use your real name or what your course expects):
-
-   ```bash
-   git config user.name "Your Name"
-   git config user.email "your.email@example.com"
-   ```
-
-4. **Stay in sync** before you push: `git pull` (or `git pull --rebase`) on your branch so you merge others’ latest changes.
-
-If the project moves to another host or fork, replace the clone URL with the one shown on that service’s **Code** button.
-
 ## How to Run
 
 **CLI (text-based):**

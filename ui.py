@@ -8,7 +8,7 @@ import sys
 import tkinter as tk
 from tkinter import ttk
 from datetime import datetime
-from typing import Any, Callable, List, Optional
+from typing import Any, Callable, List, Optional, Tuple
 
 # Design system: colors, spacing, typography
 COLORS = {
@@ -55,12 +55,12 @@ from stats import (
     average_daily_spending,
     by_category,
     by_period,
-    top_categories,
     total_spending,
     trend_last_n_days,
 )
-from alerts import run_all_alerts
+from alerts import run_all_alerts, split_alert_message
 import portfolio
+from gui_settings import load_gui_settings, pct_rules_as_tuples, save_gui_settings
 
 TRANSACTIONS_FILE = "transactions.csv"
 BUDGETS_FILE = "budgets.csv"
@@ -190,7 +190,9 @@ def setup_styles(root: tk.Tk) -> ttk.Style:
     style.configure("TNotebook.Tab", padding=(PAD_MD, PAD_SM))
     style.map("TNotebook.Tab", background=[("selected", COLORS["surface"])], foreground=[("selected", COLORS["accent"])])
     style.configure("Treeview", background=COLORS["surface"], foreground=COLORS["text"], fieldbackground=COLORS["surface"])
-    style.configure("Treeview.Heading", background=COLORS["border"], foreground=COLORS["text"])
+    style.configure("Treeview.Heading", background=COLORS["accent_light"], foreground=COLORS["accent"])
+    style.configure("TCombobox", fieldbackground=COLORS["surface"])
+    style.configure("TEntry", fieldbackground=COLORS["surface"])
     return style
 
 
@@ -198,8 +200,8 @@ def run_gui() -> None:
     """Launch the Tkinter GUI."""
     root = tk.Tk()
     root.title("Personal Budget Assistant")
-    root.geometry("720x560")
-    root.minsize(560, 440)
+    root.geometry("1100x760")
+    root.minsize(680, 540)
     root.configure(bg=COLORS["bg"])
     setup_styles(root)
 
@@ -207,11 +209,13 @@ def run_gui() -> None:
     state = {
         "transactions": load_transactions(TRANSACTIONS_FILE),
         "rules": load_budget_rules(BUDGETS_FILE),
+        "gui_settings": load_gui_settings(),
     }
 
     def reload_data():
         state["transactions"] = load_transactions(TRANSACTIONS_FILE)
         state["rules"] = load_budget_rules(BUDGETS_FILE)
+        state["gui_settings"] = load_gui_settings()
 
     def save_data():
         save_transactions(state["transactions"], TRANSACTIONS_FILE)
@@ -248,15 +252,428 @@ def run_gui() -> None:
 
     nb.bind("<<NotebookTabChanged>>", on_notebook_tab_change)
 
-    # Alerts tab
-    alerts_frame = create_alerts_tab(nb, state, reload_data)
-    nb.add(alerts_frame, text="Alerts")
-
     # Portfolio tab
     portfolio_frame = create_portfolio_tab(nb)
     nb.add(portfolio_frame, text="Portfolio")
 
+    # Settings tab (gui_settings.json + budgets.csv)
+    settings_frame = create_settings_tab(nb, state, reload_data)
+    nb.add(settings_frame, text="Settings")
+
     root.mainloop()
+
+
+_BUDGET_PERIODS = ("daily", "weekly", "monthly")
+
+
+def create_settings_tab(parent: ttk.Notebook, state: dict, reload_data: Callable) -> ttk.Frame:
+    """Edit gui_settings.json and budgets.csv (alerts on Summary)."""
+    outer = ttk.Frame(parent, padding=PAD_LG)
+
+    scroll_wrap = tk.Frame(outer, bg=COLORS["bg"])
+    scroll_wrap.pack(fill="both", expand=True)
+    canvas = tk.Canvas(scroll_wrap, bg=COLORS["bg"], highlightthickness=0)
+    vsb = ttk.Scrollbar(scroll_wrap, orient="vertical", command=canvas.yview)
+    content = tk.Frame(canvas, bg=COLORS["bg"])
+    settings_inner = canvas.create_window((0, 0), window=content, anchor="nw")
+
+    def on_settings_canvas_configure(event: Any) -> None:
+        canvas.itemconfigure(settings_inner, width=event.width)
+
+    canvas.bind("<Configure>", on_settings_canvas_configure)
+
+    def on_settings_content_configure(_event: Any) -> None:
+        canvas.configure(scrollregion=canvas.bbox("all"))
+
+    content.bind("<Configure>", on_settings_content_configure)
+    canvas.configure(yscrollcommand=vsb.set)
+    canvas.pack(side="left", fill="both", expand=True)
+    vsb.pack(side="right", fill="y")
+
+    def _sync_settings_scroll() -> None:
+        canvas.update_idletasks()
+        bbox = canvas.bbox("all")
+        if bbox:
+            canvas.configure(scrollregion=bbox)
+
+    _pg_pad = (0, PAD_MD)
+
+    _tab_hero(
+        content,
+        "Settings",
+        "Budget caps (HK$) drive overspend and streak alerts. Category % rules and the options below use gui_settings.json; caps are saved to budgets.csv.",
+    )
+
+    _section_header(content, "Budget caps (HK$)")
+    tk.Label(
+        content,
+        text="Maximum spending per category for each period. Daily caps also power consecutive-day streak alerts.",
+        bg=COLORS["bg"],
+        fg=COLORS["text_muted"],
+        font=(FONT_FAMILY, FONT_SIZE - 1),
+        wraplength=560,
+        justify="left",
+    ).pack(anchor="w", pady=(0, PAD_MD))
+
+    budget_table = tk.Frame(content, bg=COLORS["bg"])
+    budget_table.pack(fill="x")
+    row_bindings_budget: List[Tuple[tk.StringVar, tk.StringVar, tk.StringVar]] = []
+
+    def _sync_budget_from_ui() -> None:
+        if not row_bindings_budget:
+            return
+        rules = state.setdefault("rules", [])
+        for i, (cv, pv, tv) in enumerate(row_bindings_budget):
+            if i >= len(rules):
+                continue
+            cat = (cv.get() or "").strip().lower() or rules[i].category
+            per = (pv.get() or "").strip().lower() or rules[i].period
+            try:
+                thr = float(tv.get().strip())
+            except ValueError:
+                thr = rules[i].threshold
+            at = rules[i].alert_type or "overspend"
+            rules[i] = BudgetRule(category=cat, period=per, threshold=thr, alert_type=at)
+
+    def redraw_budget_rows() -> None:
+        _sync_budget_from_ui()
+        for w in budget_table.winfo_children():
+            w.destroy()
+        row_bindings_budget.clear()
+        rules = state.setdefault("rules", load_budget_rules(BUDGETS_FILE))
+        state["rules"] = rules
+
+        tk.Label(budget_table, text="Category", bg=COLORS["bg"], fg=COLORS["text_muted"], font=(FONT_FAMILY, FONT_SIZE - 1)).grid(
+            row=0, column=0, sticky="w", padx=_pg_pad, pady=(0, PAD_SM)
+        )
+        tk.Label(budget_table, text="Period", bg=COLORS["bg"], fg=COLORS["text_muted"], font=(FONT_FAMILY, FONT_SIZE - 1)).grid(
+            row=0, column=1, sticky="w", padx=_pg_pad, pady=(0, PAD_SM)
+        )
+        tk.Label(budget_table, text="Cap (HK$)", bg=COLORS["bg"], fg=COLORS["text_muted"], font=(FONT_FAMILY, FONT_SIZE - 1)).grid(
+            row=0, column=2, sticky="w", padx=_pg_pad, pady=(0, PAD_SM)
+        )
+
+        def on_budget_dim_change(_e: Any) -> None:
+            _sync_budget_from_ui()
+            redraw_budget_rows()
+
+        n_b = len(rules)
+        for idx, br in enumerate(rules):
+            cv_s = tk.StringVar(value=br.category)
+            pv_s = tk.StringVar(value=br.period)
+            tv_s = tk.StringVar(value=str(br.threshold))
+            row_ix = idx + 1
+            other_pairs = {(rules[j].category, rules[j].period) for j in range(n_b) if j != idx}
+            cats = list(DEFAULT_CATEGORIES)
+            if br.category and br.category not in cats:
+                cats = [br.category] + cats
+            cat_vals = [
+                c
+                for c in cats
+                if c == br.category
+                or any((c, p) not in other_pairs for p in _BUDGET_PERIODS)
+            ]
+            if br.category not in cat_vals:
+                cat_vals.insert(0, br.category)
+            per_vals = [
+                p
+                for p in _BUDGET_PERIODS
+                if p == br.period or (br.category, p) not in other_pairs
+            ]
+            if br.period not in per_vals:
+                per_vals.insert(0, br.period)
+            cbc = ttk.Combobox(budget_table, textvariable=cv_s, values=cat_vals or cats, width=16, state="readonly")
+            cbc.grid(row=row_ix, column=0, sticky="w", padx=_pg_pad, pady=PAD_SM)
+            cbc.bind("<<ComboboxSelected>>", on_budget_dim_change)
+            cbp = ttk.Combobox(budget_table, textvariable=pv_s, values=per_vals or list(_BUDGET_PERIODS), width=10, state="readonly")
+            cbp.grid(row=row_ix, column=1, sticky="w", padx=_pg_pad, pady=PAD_SM)
+            cbp.bind("<<ComboboxSelected>>", on_budget_dim_change)
+            ttk.Entry(budget_table, textvariable=tv_s, width=12).grid(row=row_ix, column=2, sticky="w", padx=_pg_pad, pady=PAD_SM)
+
+            def remove_b(ii: int = idx) -> None:
+                rr = state["rules"]
+                if 0 <= ii < len(rr):
+                    rr.pop(ii)
+                    redraw_budget_rows()
+
+            ttk.Button(budget_table, text="Remove", command=remove_b).grid(row=row_ix, column=3, sticky="w", padx=_pg_pad, pady=PAD_SM)
+            row_bindings_budget.append((cv_s, pv_s, tv_s))
+
+        used_pairs = {(r.category, r.period) for r in rules}
+        max_rules = len(DEFAULT_CATEGORIES) * len(_BUDGET_PERIODS)
+        can_add_b = len(used_pairs) < max_rules and any(
+            (c, p) not in used_pairs for c in DEFAULT_CATEGORIES for p in _BUDGET_PERIODS
+        )
+        if can_add_b:
+            add_budget_btn.state(["!disabled"])
+        else:
+            add_budget_btn.state(["disabled"])
+        _sync_settings_scroll()
+
+    def add_budget_rule() -> None:
+        _sync_budget_from_ui()
+        rules = state.setdefault("rules", [])
+        used_pairs = {(r.category, r.period) for r in rules}
+        picked = None
+        for c in DEFAULT_CATEGORIES:
+            for p in _BUDGET_PERIODS:
+                if (c, p) not in used_pairs:
+                    picked = (c, p)
+                    break
+            if picked:
+                break
+        if picked is None:
+            return
+        rules.append(BudgetRule(category=picked[0], period=picked[1], threshold=100.0, alert_type="overspend"))
+        redraw_budget_rows()
+
+    add_budget_btn = ttk.Button(content, text="Add budget cap", command=add_budget_rule)
+    add_budget_btn.pack(anchor="w", pady=PAD_SM)
+    redraw_budget_rows()
+
+    _section_header(content, "Category share of total spending")
+    tk.Label(
+        content,
+        text="Warning % fires first. Critical % (optional) must be higher than warning; leave blank for warning-only.",
+        bg=COLORS["bg"],
+        fg=COLORS["text_muted"],
+        font=(FONT_FAMILY, FONT_SIZE - 1),
+        wraplength=560,
+        justify="left",
+    ).pack(anchor="w", pady=(0, PAD_MD))
+
+    pct_table = tk.Frame(content, bg=COLORS["bg"])
+    pct_table.pack(fill="x")
+    row_bindings: List[Tuple[tk.StringVar, tk.StringVar, tk.StringVar]] = []
+
+    def _migrate_row(row: List[Any]) -> List[Any]:
+        if len(row) >= 3:
+            return [row[0], float(row[1]), float(row[2])]
+        if len(row) == 2:
+            return [row[0], float(row[1]), 0.0]
+        return []
+
+    def _sync_pct_rules_from_ui() -> None:
+        """Persist current row StringVars into gui_settings before redraw (keeps edits)."""
+        if not row_bindings:
+            return
+        gs = state.setdefault("gui_settings", load_gui_settings())
+        rules = gs.setdefault("pct_rules", [])
+        for i, (cv_s, wv_s, cr_s) in enumerate(row_bindings):
+            if i >= len(rules):
+                continue
+            cat = (cv_s.get() or "").strip().lower() or str(rules[i][0])
+            try:
+                wn = float(wv_s.get().strip())
+            except ValueError:
+                wn = float(rules[i][1])
+            cr_raw = (cr_s.get() or "").strip()
+            try:
+                crit = 0.0 if not cr_raw else float(cr_raw)
+            except ValueError:
+                crit = float(rules[i][2])
+            rules[i] = [cat, wn, crit]
+
+    def redraw_pct_rows() -> None:
+        _sync_pct_rules_from_ui()
+        for w in pct_table.winfo_children():
+            w.destroy()
+        row_bindings.clear()
+        gs = state.setdefault("gui_settings", load_gui_settings())
+        raw = gs.get("pct_rules") or []
+        rules = []
+        for r in raw:
+            rr = _migrate_row(list(r) if isinstance(r, (list, tuple)) else [])
+            if rr:
+                rules.append(rr)
+        gs["pct_rules"] = rules
+
+        n_rules = len(gs["pct_rules"])
+        tk.Label(pct_table, text="Category", bg=COLORS["bg"], fg=COLORS["text_muted"], font=(FONT_FAMILY, FONT_SIZE - 1)).grid(
+            row=0, column=0, sticky="w", padx=_pg_pad, pady=(0, PAD_SM)
+        )
+        tk.Label(pct_table, text="Warning %", bg=COLORS["bg"], fg=COLORS["text_muted"], font=(FONT_FAMILY, FONT_SIZE - 1)).grid(
+            row=0, column=1, sticky="w", padx=_pg_pad, pady=(0, PAD_SM)
+        )
+        tk.Label(pct_table, text="Critical %", bg=COLORS["bg"], fg=COLORS["text_muted"], font=(FONT_FAMILY, FONT_SIZE - 1)).grid(
+            row=0, column=2, sticky="w", padx=_pg_pad, pady=(0, PAD_SM)
+        )
+        tk.Label(pct_table, text="(optional)", bg=COLORS["bg"], fg=COLORS["text_muted"], font=(FONT_FAMILY, FONT_SIZE - 2)).grid(
+            row=0, column=3, sticky="w", padx=_pg_pad, pady=(0, PAD_SM)
+        )
+
+        def on_pct_cat_selected(_e: Any) -> None:
+            _sync_pct_rules_from_ui()
+            redraw_pct_rows()
+
+        for idx, triple in enumerate(gs["pct_rules"]):
+            cat, wv, cv = triple[0], triple[1], triple[2]
+            cv_s = tk.StringVar(value=str(cat))
+            wv_s = tk.StringVar(value=str(wv))
+            cr_s = tk.StringVar(value="" if float(cv) <= 0 else str(cv))
+            row_ix = idx + 1
+            used_elsewhere: set = set()
+            for j in range(n_rules):
+                if j == idx:
+                    continue
+                used_elsewhere.add(str(gs["pct_rules"][j][0]).strip().lower())
+            vals = list(DEFAULT_CATEGORIES)
+            cur = cv_s.get().strip().lower()
+            if cur and cur not in vals:
+                vals = [cur] + vals
+            combo_vals = [c for c in vals if c not in used_elsewhere or c == cur]
+            cb = ttk.Combobox(pct_table, textvariable=cv_s, values=combo_vals or vals, width=18, state="readonly")
+            cb.grid(row=row_ix, column=0, sticky="w", padx=_pg_pad, pady=PAD_SM)
+            cb.bind("<<ComboboxSelected>>", on_pct_cat_selected)
+            ttk.Entry(pct_table, textvariable=wv_s, width=10).grid(row=row_ix, column=1, sticky="w", padx=_pg_pad, pady=PAD_SM)
+            ttk.Entry(pct_table, textvariable=cr_s, width=10).grid(row=row_ix, column=2, sticky="w", padx=_pg_pad, pady=PAD_SM)
+
+            def remove(ii: int = idx) -> None:
+                r = state["gui_settings"]["pct_rules"]
+                if 0 <= ii < len(r):
+                    r.pop(ii)
+                    redraw_pct_rows()
+
+            ttk.Button(pct_table, text="Remove", command=remove).grid(row=row_ix, column=4, sticky="w", padx=_pg_pad, pady=PAD_SM)
+            row_bindings.append((cv_s, wv_s, cr_s))
+
+        used_cats = {str(r[0]).strip().lower() for r in (gs.get("pct_rules") or [])}
+        can_add = any(c not in used_cats for c in DEFAULT_CATEGORIES)
+        if can_add:
+            add_pct_btn.state(["!disabled"])
+        else:
+            add_pct_btn.state(["disabled"])
+        _sync_settings_scroll()
+
+    def add_pct_rule() -> None:
+        _sync_pct_rules_from_ui()
+        gs = state.setdefault("gui_settings", load_gui_settings())
+        used = {str(r[0]).strip().lower() for r in (gs.get("pct_rules") or [])}
+        pick = None
+        for c in DEFAULT_CATEGORIES:
+            if c not in used:
+                pick = c
+                break
+        if pick is None:
+            return
+        gs.setdefault("pct_rules", []).append([pick, 25.0, 0.0])
+        redraw_pct_rows()
+
+    add_pct_btn = ttk.Button(content, text="Add category rule", command=add_pct_rule)
+    add_pct_btn.pack(anchor="w", pady=PAD_SM)
+    redraw_pct_rows()
+
+    _section_header(content, "Other alert thresholds")
+    other_outer, other_inner = _surface_card_with_accent(content)
+    other_outer.pack(fill="x", pady=(0, PAD_MD))
+
+    gs0 = state.get("gui_settings") or load_gui_settings()
+    consec_var = tk.StringVar(value=str(gs0.get("consecutive_overspend_days", 3)))
+    creep_var = tk.StringVar(value=str(gs0.get("subscription_creep_threshold_pct", 20.0)))
+
+    _field_label(other_inner, "Consecutive overspend days (daily budget streak)")
+    ttk.Entry(other_inner, textvariable=consec_var, width=8).pack(anchor="w", pady=(0, PAD_MD))
+    _field_label(
+        other_inner,
+        "Subscription creep — month-on-month rise (%) that triggers an alert",
+    )
+    ttk.Entry(other_inner, textvariable=creep_var, width=8).pack(anchor="w", pady=(0, PAD_LG))
+
+    msg = tk.Label(other_inner, text="", bg=COLORS["surface"], font=(FONT_FAMILY, FONT_SIZE))
+
+    def save_settings() -> None:
+        _sync_budget_from_ui()
+        _sync_pct_rules_from_ui()
+
+        pairs_b: set = set()
+        for br in state.setdefault("rules", []):
+            key = (br.category.strip().lower(), br.period.strip().lower())
+            if key in pairs_b:
+                msg.config(
+                    text=f'Duplicate budget cap for "{br.category}" ({br.period}). Remove or edit one row.',
+                    fg=COLORS["error"],
+                )
+                return
+            pairs_b.add(key)
+            if br.threshold <= 0:
+                msg.config(text="Each budget cap (HK$) must be greater than zero.", fg=COLORS["error"])
+                return
+            if br.period not in _BUDGET_PERIODS:
+                msg.config(text=f'Invalid period "{br.period}". Use daily, weekly, or monthly.', fg=COLORS["error"])
+                return
+
+        cats: List[str] = []
+        new_pct: List[List[Any]] = []
+
+        for cv_s, wv_s, cr_s in row_bindings:
+            cat = cv_s.get().strip().lower()
+            if not cat:
+                msg.config(text="Each row needs a category.", fg=COLORS["error"])
+                return
+            if cat in cats:
+                msg.config(text=f"Duplicate category \"{cat}\". Each category can appear only once.", fg=COLORS["error"])
+                return
+            cats.append(cat)
+            try:
+                wn = float(wv_s.get().strip())
+            except ValueError:
+                msg.config(text=f"Invalid warning % for {cat}.", fg=COLORS["error"])
+                return
+            if not (0 < wn <= 100):
+                msg.config(text="Warning % must be between 0 and 100.", fg=COLORS["error"])
+                return
+            cr_raw = cr_s.get().strip()
+            if not cr_raw:
+                crit = 0.0
+            else:
+                try:
+                    crit = float(cr_raw)
+                except ValueError:
+                    msg.config(text=f"Invalid critical % for {cat}.", fg=COLORS["error"])
+                    return
+                if crit <= 0:
+                    msg.config(text="Critical % must be blank or strictly positive.", fg=COLORS["error"])
+                    return
+                if crit <= wn:
+                    msg.config(
+                        text=f"{cat}: critical % must be greater than warning %.",
+                        fg=COLORS["error"],
+                    )
+                    return
+                if crit > 100:
+                    msg.config(text="Critical % cannot exceed 100.", fg=COLORS["error"])
+                    return
+            new_pct.append([cat, wn, crit])
+
+        try:
+            cd = int(consec_var.get().strip())
+            creep = float(creep_var.get().strip())
+        except ValueError:
+            msg.config(text="Use an integer for days and a number for creep.", fg=COLORS["error"])
+            return
+
+        state.setdefault("gui_settings", load_gui_settings())
+        state["gui_settings"]["pct_rules"] = new_pct
+        state["gui_settings"]["consecutive_overspend_days"] = max(1, min(30, cd))
+        state["gui_settings"]["subscription_creep_threshold_pct"] = max(0.0, min(500.0, creep))
+        save_budget_rules(state["rules"], BUDGETS_FILE)
+        merged = save_gui_settings(state["gui_settings"])
+        state["gui_settings"] = merged
+        reload_data()
+        msg.config(
+            text="Saved to gui_settings.json and budgets.csv. Refresh the Summary tab if alerts look stale.",
+            fg=COLORS["success"],
+        )
+        redraw_budget_rows()
+        redraw_pct_rows()
+
+    ttk.Separator(content, orient="horizontal").pack(fill="x", pady=PAD_MD)
+    ttk.Button(content, text="Save settings", command=save_settings).pack(pady=PAD_SM)
+    msg.pack(anchor="w", pady=PAD_SM)
+
+    _bind_mousewheel_to_canvas_and_content(canvas, content)
+    _sync_settings_scroll()
+    return outer
 
 
 def _category_bar_color(name: str) -> str:
@@ -306,7 +723,7 @@ def _bind_mousewheel_to_canvas_and_content(canvas: tk.Canvas, content: tk.Widget
 
 def _kpi_card(parent: tk.Widget, title: str, value: str, subtitle: str = "") -> tk.Frame:
     card = tk.Frame(parent, bg=COLORS["surface"], highlightbackground=COLORS["border"], highlightthickness=1)
-    strip = tk.Frame(card, bg=COLORS["accent"], width=4)
+    strip = tk.Frame(card, bg=COLORS["accent"], width=5)
     strip.pack(side="left", fill="y")
     box = tk.Frame(card, bg=COLORS["surface"], padx=PAD_MD, pady=PAD_MD)
     box.pack(side="left", fill="both", expand=True)
@@ -335,12 +752,49 @@ def _section_header(parent: tk.Widget, title: str, emoji: str = "") -> None:
     bar.pack(fill="x", pady=(PAD_SM, 0))
 
 
-def _category_row(parent: tk.Widget, name: str, amount: float, pct: float, bar_width: int = 200) -> None:
+def _tab_hero(parent: tk.Widget, title: str, subtitle: str = "") -> None:
+    """Title + optional subtitle + accent bar (matches Summary tab rhythm)."""
+    row = tk.Frame(parent, bg=COLORS["bg"])
+    row.pack(fill="x", pady=(0, PAD_LG))
+    tk.Label(row, text=title, bg=COLORS["bg"], fg=COLORS["text"], font=FONT_HEADING).pack(anchor="w")
+    if subtitle:
+        tk.Label(
+            row, text=subtitle, bg=COLORS["bg"], fg=COLORS["text_muted"],
+            font=(FONT_FAMILY, FONT_SIZE), wraplength=560, justify="left",
+        ).pack(anchor="w", pady=(PAD_SM, 0))
+    tk.Frame(row, bg=COLORS["accent"], height=3).pack(fill="x", pady=(PAD_MD, 0))
+
+
+def _surface_card_with_accent(parent: tk.Widget) -> Tuple[tk.Frame, tk.Frame]:
+    """White card with teal left strip; return (card, inner) to pack fields into inner."""
+    card = tk.Frame(parent, bg=COLORS["surface"], highlightbackground=COLORS["border"], highlightthickness=1)
+    strip = tk.Frame(card, bg=COLORS["accent"], width=4)
+    strip.pack(side="left", fill="y")
+    inner = tk.Frame(card, bg=COLORS["surface"], padx=PAD_LG, pady=PAD_LG)
+    inner.pack(side="left", fill="both", expand=True)
+    return card, inner
+
+
+def _field_label(parent: tk.Widget, text: str, bg: str = COLORS["surface"]) -> None:
+    tk.Label(
+        parent, text=text, bg=bg, fg=COLORS["text_muted"],
+        font=(FONT_FAMILY, FONT_SIZE - 1),
+    ).pack(anchor="w")
+
+
+def _category_row(
+    parent: tk.Widget,
+    name: str,
+    amount: float,
+    pct: float,
+    bar_width: int = 200,
+    label_width: int = 11,
+) -> None:
     row = tk.Frame(parent, bg=COLORS["bg"])
     row.pack(fill="x", pady=PAD_SM)
     tk.Label(
         row, text=name.capitalize(), bg=COLORS["bg"], fg=COLORS["text"],
-        font=(FONT_FAMILY, FONT_SIZE), width=11, anchor="w",
+        font=(FONT_FAMILY, FONT_SIZE), width=label_width, anchor="w",
     ).pack(side="left")
     track = tk.Frame(row, bg=COLORS["border"], height=12, width=bar_width)
     track.pack(side="left", padx=(PAD_SM, PAD_SM), pady=2)
@@ -370,6 +824,166 @@ def _mini_stat_row(parent: tk.Widget, label: str, amount: float) -> None:
     ).pack(side="right")
 
 
+def _portfolio_block_heading(parent: tk.Widget, title: str, subtitle: str = "") -> None:
+    """Subsection title inside Portfolio results (on surface)."""
+    wrap = tk.Frame(parent, bg=COLORS["surface"])
+    wrap.pack(fill="x", pady=(PAD_MD, PAD_SM))
+    tk.Label(wrap, text=title, bg=COLORS["surface"], fg=COLORS["text"], font=FONT_SECTION).pack(anchor="w")
+    if subtitle:
+        tk.Label(
+            wrap, text=subtitle, bg=COLORS["surface"], fg=COLORS["text_muted"],
+            font=(FONT_FAMILY, FONT_SIZE - 1),
+        ).pack(anchor="w", pady=(2, 0))
+    tk.Frame(wrap, bg=COLORS["accent_light"], height=2).pack(fill="x", pady=(PAD_SM, 0))
+
+
+def _portfolio_alloc_bar_row(parent: tk.Widget, asset_name: str, weight: float, bar_width: int = 200) -> None:
+    """Allocation strip mirroring Summary category bars, on card surface."""
+    pct = max(0.0, min(100.0, weight * 100.0))
+    row = tk.Frame(parent, bg=COLORS["surface"])
+    row.pack(fill="x", pady=PAD_SM)
+    label = asset_name.replace("_", " ").strip().title() if asset_name else ""
+    tk.Label(
+        row, text=label, bg=COLORS["surface"], fg=COLORS["text"],
+        font=(FONT_FAMILY, FONT_SIZE), width=12, anchor="w",
+    ).pack(side="left")
+    track = tk.Frame(row, bg=COLORS["border"], height=14, width=bar_width)
+    track.pack(side="left", padx=(PAD_SM, PAD_SM), pady=2)
+    track.pack_propagate(False)
+    fill_w = max(2, int(bar_width * (pct / 100.0)))
+    tk.Frame(track, bg=_category_bar_color(asset_name), height=14, width=fill_w).place(x=0, y=0, relheight=1)
+    tk.Label(
+        row, text=f"{pct:.0f}%", bg=COLORS["surface"], fg=COLORS["accent"],
+        font=(FONT_FAMILY, FONT_SIZE, "bold"), width=5, anchor="e",
+    ).pack(side="right", padx=(0, PAD_SM))
+
+
+def _portfolio_percent_strip(parent: tk.Widget, label: str, fraction: float) -> None:
+    row = tk.Frame(parent, bg=COLORS["accent_light"], padx=PAD_MD, pady=PAD_MD)
+    row.pack(fill="x", pady=(PAD_MD, 0))
+    tk.Label(
+        row, text=label, bg=COLORS["accent_light"], fg=COLORS["text"],
+        font=(FONT_FAMILY, FONT_SIZE),
+    ).pack(side="left")
+    tk.Label(
+        row, text=f"{fraction * 100:.1f}%", bg=COLORS["accent_light"], fg=COLORS["accent"],
+        font=(FONT_FAMILY, FONT_SIZE, "bold"),
+    ).pack(side="right")
+
+
+# Per–alert-type banners (paired with alerts.split_alert_message kinds)
+_ALERT_BANNER_THEME = {
+    "overspend": {
+        "strip": "#e11d48",
+        "bg": "#fff1f2",
+        "title": "Budget cap exceeded",
+    },
+    "budget_pct_warn": {
+        "strip": "#d97706",
+        "bg": "#fffbeb",
+        "title": "Share of spending (warning)",
+    },
+    "budget_pct_critical": {
+        "strip": "#b45309",
+        "bg": "#fff7ed",
+        "title": "Share of spending (critical)",
+    },
+    "budget_pct": {
+        "strip": "#d97706",
+        "bg": "#fffbeb",
+        "title": "Share of spending high",
+    },
+    "streak": {
+        "strip": "#7c3aed",
+        "bg": "#f5f3ff",
+        "title": "Consecutive overspend",
+    },
+    "uncategorized": {
+        "strip": "#475569",
+        "bg": "#f8fafc",
+        "title": "Uncategorized",
+    },
+    "subscription_creep": {
+        "strip": "#ea580c",
+        "bg": "#fff7ed",
+        "title": "Subscription creep",
+    },
+    "general": {
+        "strip": "#0e7490",
+        "bg": "#ecfeff",
+        "title": "Notice",
+    },
+    "clear": {
+        "strip": "#059669",
+        "bg": "#ecfdf5",
+        "title": "All clear",
+    },
+}
+
+
+def _alert_type_banner(parent: tk.Widget, kind: str, body: str) -> None:
+    """One full-width banner row for a single alert (or all-clear)."""
+    theme = _ALERT_BANNER_THEME.get(kind) or _ALERT_BANNER_THEME["general"]
+    strip_c = theme["strip"]
+    bg_c = theme["bg"]
+    title = theme["title"]
+    sw = 5
+
+    outer = tk.Frame(parent, bg=COLORS["bg"])
+    outer.pack(fill="x", pady=(0, PAD_MD))
+    card = tk.Frame(outer, bg=bg_c, highlightbackground=COLORS["border"], highlightthickness=1)
+    card.pack(fill="x")
+    strip = tk.Frame(card, bg=strip_c, width=sw)
+    strip.pack(side="left", fill="y")
+    inner = tk.Frame(card, bg=bg_c, padx=PAD_MD, pady=PAD_MD)
+    inner.pack(side="left", fill="both", expand=True)
+
+    top = tk.Frame(inner, bg=bg_c)
+    top.pack(fill="x")
+    tk.Label(
+        top,
+        text=title.upper(),
+        bg=bg_c,
+        fg=strip_c,
+        font=(FONT_FAMILY, FONT_SIZE - 1, "bold"),
+    ).pack(side="left")
+    tk.Label(
+        inner,
+        text=body,
+        bg=bg_c,
+        fg=COLORS["text"],
+        font=(FONT_FAMILY, FONT_SIZE),
+        wraplength=520,
+        justify="left",
+    ).pack(anchor="w", pady=(PAD_SM, 0))
+
+
+def _summary_alerts_block(parent: tk.Widget, state: dict) -> None:
+    """Alerts only (banners). Stats are built separately below a 'Spending statistics' header."""
+    gs = state.get("gui_settings") or load_gui_settings()
+    pct_rules = pct_rules_as_tuples(gs)
+    consec = int(gs.get("consecutive_overspend_days", 3))
+    creep_thr = float(gs.get("subscription_creep_threshold_pct", 20.0))
+    messages = run_all_alerts(
+        state["transactions"],
+        state["rules"],
+        pct_rules=pct_rules,
+        consecutive_days=consec,
+        subscription_creep_threshold_pct=creep_thr,
+    )
+    _section_header(parent, "Alerts")
+    if not messages:
+        _alert_type_banner(
+            parent,
+            "clear",
+            "No budget or behaviour warnings right now. Numbers below reflect your recorded spending.",
+        )
+    else:
+        for msg in messages:
+            kind, body = split_alert_message(msg)
+            _alert_type_banner(parent, kind, body or msg)
+
+
 def _refresh_summary_dashboard(
     content: tk.Frame,
     state: dict,
@@ -379,6 +993,9 @@ def _refresh_summary_dashboard(
     reload_data()
     for w in content.winfo_children():
         w.destroy()
+
+    _summary_alerts_block(content, state)
+    _section_header(content, "Spending statistics")
 
     txs = state["transactions"]
     if not txs:
@@ -405,6 +1022,7 @@ def _refresh_summary_dashboard(
     avg_day = average_daily_spending(txs)
     t7 = trend_last_n_days(txs, 7)
     t30 = trend_last_n_days(txs, 30)
+    t365 = trend_last_n_days(txs, 365)
 
     hero = tk.Frame(content, bg=COLORS["bg"])
     hero.pack(fill="x")
@@ -427,38 +1045,36 @@ def _refresh_summary_dashboard(
         _category_row(content, cat, amt, pct)
 
     _section_header(content, "Momentum")
-    trend_card = tk.Frame(content, bg=COLORS["surface"], highlightbackground=COLORS["border"], highlightthickness=1)
-    trend_card.pack(fill="x", pady=(0, PAD_SM))
-    inner_t = tk.Frame(trend_card, bg=COLORS["surface"], padx=PAD_LG, pady=PAD_MD)
-    inner_t.pack(fill="x")
-    _mini_stat_row(inner_t, "Last 7 days (from latest activity)", t7)
-    _mini_stat_row(inner_t, "Last 30 days (from latest activity)", t30)
-
-    _section_header(content, "Top categories")
-    top = top_categories(txs, 3)
-    medals = ("🥇", "🥈", "🥉")
-    top_box = tk.Frame(content, bg=COLORS["bg"])
-    top_box.pack(fill="x")
-    for i, (cat, amt) in enumerate(top):
-        row = tk.Frame(top_box, bg=COLORS["surface"], highlightbackground=COLORS["border"], highlightthickness=1)
-        row.pack(fill="x", pady=PAD_SM)
-        inn = tk.Frame(row, bg=COLORS["surface"], padx=PAD_MD, pady=PAD_SM)
-        inn.pack(fill="x")
-        badge = medals[i] if i < len(medals) else "•"
-        tk.Label(
-            inn, text=f"{badge}  {cat.capitalize()}", bg=COLORS["surface"], fg=COLORS["text"],
-            font=(FONT_FAMILY, FONT_SIZE + 1, "bold"),
-        ).pack(side="left")
-        tk.Label(
-            inn, text=f"HK$ {amt:,.2f}", bg=COLORS["surface"], fg=COLORS["accent"],
-            font=(FONT_FAMILY, FONT_SIZE, "bold"),
-        ).pack(side="right")
+    denom = total if total > 0 else 1e-12
+    pct7 = (t7 / denom) * 100.0
+    pct30 = (t30 / denom) * 100.0
+    pct365 = (t365 / denom) * 100.0
+    mom = tk.Frame(content, bg=COLORS["bg"])
+    mom.pack(fill="x", pady=(0, PAD_SM))
+    mom.grid_columnconfigure(0, weight=1)
+    mom.grid_columnconfigure(1, weight=1)
+    mom.grid_columnconfigure(2, weight=1)
+    _kpi_card(mom, "Last 7 days", _fmt_hk(t7), f"{pct7:.1f}% of total spending").grid(
+        row=0, column=0, sticky="nsew", padx=(0, PAD_SM),
+    )
+    _kpi_card(mom, "Last 30 days", _fmt_hk(t30), f"{pct30:.1f}% of total spending").grid(
+        row=0, column=1, sticky="nsew", padx=PAD_SM,
+    )
+    _kpi_card(mom, "Last year", _fmt_hk(t365), f"{pct365:.1f}% of total spending").grid(
+        row=0, column=2, sticky="nsew", padx=(PAD_SM, 0),
+    )
 
     monthly = by_period(txs, "monthly")
     if monthly:
         _section_header(content, "Recent months")
+        months_card = tk.Frame(
+            content, bg=COLORS["surface"], highlightbackground=COLORS["border"], highlightthickness=1,
+        )
+        months_card.pack(fill="x", pady=(0, PAD_SM))
+        inner_m = tk.Frame(months_card, bg=COLORS["surface"], padx=PAD_LG, pady=PAD_MD)
+        inner_m.pack(fill="x")
         for key in sorted(monthly.keys())[-3:]:
-            _mini_stat_row(content, str(key), monthly[key])
+            _mini_stat_row(inner_m, str(key), monthly[key])
 
     _bind_mousewheel_to_canvas_and_content(canvas, content)
 
@@ -501,30 +1117,32 @@ def create_summary_tab(parent: ttk.Notebook, state: dict, reload_data: Callable)
 def create_add_tab(parent: ttk.Notebook, state: dict, save_data: Callable, reload_data: Callable) -> ttk.Frame:
     """Add transaction tab: form with date, amount, category, description."""
     frame = ttk.Frame(parent, padding=PAD_LG)
-    card = tk.Frame(frame, bg=COLORS["surface"], relief="flat", padx=PAD_LG, pady=PAD_LG, highlightbackground=COLORS["border"], highlightthickness=1)
-    card.pack(fill="x")
+    _tab_hero(
+        frame,
+        "Add a transaction",
+        "Log an expense with date, amount, category, and an optional note.",
+    )
 
-    # Date
-    ttk.Label(card, text="Date (YYYY-MM-DD):").pack(anchor="w")
+    card_outer, card = _surface_card_with_accent(frame)
+    card_outer.pack(fill="x", pady=(0, PAD_MD))
+
+    _field_label(card, "Date (YYYY-MM-DD)")
     date_var = tk.StringVar(value=datetime.now().strftime("%Y-%m-%d"))
     date_row = tk.Frame(card, bg=COLORS["surface"])
     date_row.pack(anchor="w", pady=(0, PAD_MD))
     ttk.Entry(date_row, textvariable=date_var, width=14).pack(side="left")
     ttk.Button(date_row, text="📅", width=3, command=lambda: show_date_picker(card, date_var)).pack(side="left", padx=(PAD_SM, 0))
 
-    # Amount
-    ttk.Label(card, text="Amount (HKD):").pack(anchor="w")
+    _field_label(card, "Amount (HKD)")
     amount_entry = ttk.Entry(card, width=15)
     amount_entry.pack(anchor="w", pady=(0, PAD_MD))
 
-    # Category
-    ttk.Label(card, text="Category:").pack(anchor="w")
+    _field_label(card, "Category")
     cat_var = tk.StringVar()
     cat_combo = ttk.Combobox(card, textvariable=cat_var, values=DEFAULT_CATEGORIES, width=20)
     cat_combo.pack(anchor="w", pady=(0, PAD_MD))
 
-    # Description
-    ttk.Label(card, text="Description (optional):").pack(anchor="w")
+    _field_label(card, "Description (optional)")
     desc_entry = ttk.Entry(card, width=40)
     desc_entry.pack(anchor="w", pady=(0, PAD_LG))
 
@@ -559,7 +1177,7 @@ def create_add_tab(parent: ttk.Notebook, state: dict, save_data: Callable, reloa
         msg_label.config(text="Transaction added.", fg=COLORS["success"])
 
     ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=PAD_MD)
-    ttk.Button(frame, text="Add Transaction", command=do_add).pack(pady=PAD_SM)
+    ttk.Button(frame, text="Add transaction", command=do_add).pack(pady=PAD_SM)
     msg_label.pack(pady=PAD_SM)
     return frame
 
@@ -572,6 +1190,12 @@ def create_transactions_tab(
 ) -> ttk.Frame:
     """Transactions tab: scrollable list with live filters."""
     frame = ttk.Frame(parent, padding=PAD_LG)
+    _tab_hero(
+        frame,
+        "Transactions",
+        "Filter the list, refresh from disk, or edit the selected row.",
+    )
+    _section_header(frame, "Filters")
 
     date_filter_var = tk.StringVar()
     cat_filter_var = tk.StringVar()
@@ -583,29 +1207,30 @@ def create_transactions_tab(
             cats.add(t.category)
         return [""] + sorted(cats)
 
-    # Filters in a card (packed after tree + footer so the button bar stays visible when resized)
-    filter_card = tk.Frame(frame, bg=COLORS["surface"], relief="flat", padx=PAD_MD, pady=PAD_MD, highlightbackground=COLORS["border"], highlightthickness=1)
+    filter_outer, filter_card = _surface_card_with_accent(frame)
     row1 = tk.Frame(filter_card, bg=COLORS["surface"])
     row1.pack(fill="x")
-    tk.Label(row1, text="Date:", bg=COLORS["surface"], fg=COLORS["text"], font=(FONT_FAMILY, FONT_SIZE)).pack(side="left", padx=(0, PAD_SM))
+    tk.Label(row1, text="Date", bg=COLORS["surface"], fg=COLORS["text_muted"], font=(FONT_FAMILY, FONT_SIZE - 1)).pack(side="left", padx=(0, PAD_SM))
     date_filter = ttk.Entry(row1, textvariable=date_filter_var, width=11)
     date_filter.pack(side="left", padx=(0, PAD_SM))
     ttk.Button(row1, text="📅", width=3, command=lambda: show_date_picker(filter_card, date_filter_var)).pack(side="left", padx=(0, PAD_MD))
-    tk.Label(row1, text="Category:", bg=COLORS["surface"], fg=COLORS["text"], font=(FONT_FAMILY, FONT_SIZE)).pack(side="left", padx=(0, PAD_SM))
+    tk.Label(row1, text="Category", bg=COLORS["surface"], fg=COLORS["text_muted"], font=(FONT_FAMILY, FONT_SIZE - 1)).pack(side="left", padx=(0, PAD_SM))
     cat_filter = ttk.Combobox(row1, textvariable=cat_filter_var, values=category_choices(), width=14, state="normal")
     cat_filter.pack(side="left", padx=(0, PAD_MD))
 
     row2 = tk.Frame(filter_card, bg=COLORS["surface"])
     row2.pack(fill="x", pady=(PAD_SM, 0))
-    tk.Label(row2, text="Search description:", bg=COLORS["surface"], fg=COLORS["text"], font=(FONT_FAMILY, FONT_SIZE)).pack(side="left", padx=(0, PAD_SM))
+    tk.Label(row2, text="Search description", bg=COLORS["surface"], fg=COLORS["text_muted"], font=(FONT_FAMILY, FONT_SIZE - 1)).pack(side="left", padx=(0, PAD_SM))
     desc_filter = ttk.Entry(row2, textvariable=desc_filter_var, width=40)
     desc_filter.pack(side="left", fill="x", expand=True)
 
     sep_below_filter = ttk.Separator(frame, orient="horizontal")
+    filter_outer.pack(side="top", fill="x")
+    sep_below_filter.pack(side="top", fill="x", pady=PAD_MD)
+    _section_header(frame, "Your transactions")
 
-    # Treeview + scrollbars in card
-    tree_card = tk.Frame(frame, bg=COLORS["surface"], relief="flat", padx=PAD_MD, pady=PAD_MD, highlightbackground=COLORS["border"], highlightthickness=1)
-    tree_inner = tk.Frame(tree_card, bg=COLORS["surface"])
+    tree_outer, tree_host = _surface_card_with_accent(frame)
+    tree_inner = tk.Frame(tree_host, bg=COLORS["surface"])
     tree_inner.pack(fill="both", expand=True)
     columns = ("date", "amount", "category", "description")
     tree = ttk.Treeview(tree_inner, columns=columns, show="headings", height=12, selectmode="browse")
@@ -718,27 +1343,30 @@ def create_transactions_tab(
         dlg.transient(top)
         dlg.grab_set()
 
-        card = tk.Frame(dlg, bg=COLORS["surface"], padx=PAD_LG, pady=PAD_LG,
-                        highlightbackground=COLORS["border"], highlightthickness=1)
-        card.pack(fill="both", expand=True, padx=PAD_MD, pady=PAD_MD)
+        wrap = tk.Frame(dlg, bg=COLORS["bg"], padx=PAD_MD, pady=PAD_MD)
+        wrap.pack(fill="both", expand=True)
+        tk.Label(wrap, text="Edit transaction", bg=COLORS["bg"], fg=COLORS["text"], font=FONT_SECTION).pack(anchor="w", pady=(0, PAD_MD))
 
-        ttk.Label(card, text="Date (YYYY-MM-DD):").pack(anchor="w")
+        card_outer, card = _surface_card_with_accent(wrap)
+        card_outer.pack(fill="both", expand=True)
+
+        _field_label(card, "Date (YYYY-MM-DD)")
         date_var = tk.StringVar(value=t_orig.date)
         date_row = tk.Frame(card, bg=COLORS["surface"])
         date_row.pack(anchor="w", pady=(0, PAD_MD))
         ttk.Entry(date_row, textvariable=date_var, width=14).pack(side="left")
         ttk.Button(date_row, text="📅", width=3, command=lambda: show_date_picker(card, date_var)).pack(side="left", padx=(PAD_SM, 0))
 
-        ttk.Label(card, text="Amount (HKD):").pack(anchor="w")
+        _field_label(card, "Amount (HKD)")
         amount_var = tk.StringVar(value=f"{abs(t_orig.amount):.2f}")
         ttk.Entry(card, textvariable=amount_var, width=15).pack(anchor="w", pady=(0, PAD_MD))
 
-        ttk.Label(card, text="Category:").pack(anchor="w")
+        _field_label(card, "Category")
         cat_edit_var = tk.StringVar(value=t_orig.category)
         cat_edit = ttk.Combobox(card, textvariable=cat_edit_var, values=sorted(category_choices())[1:], width=20)
         cat_edit.pack(anchor="w", pady=(0, PAD_MD))
 
-        ttk.Label(card, text="Description:").pack(anchor="w")
+        _field_label(card, "Description")
         desc_var = tk.StringVar(value=t_orig.description)
         ttk.Entry(card, textvariable=desc_var, width=40).pack(anchor="w", pady=(0, PAD_LG))
 
@@ -781,15 +1409,18 @@ def create_transactions_tab(
         msg.pack(anchor="w", pady=(PAD_SM, 0))
         dlg.protocol("WM_DELETE_WINDOW", close)
 
-    btn_row_tx = tk.Frame(frame)
+    btn_row_outer = tk.Frame(frame)
+    btn_row_outer.columnconfigure(0, weight=1)
+    btn_row_outer.columnconfigure(1, weight=0)
+    btn_row_outer.columnconfigure(2, weight=1)
+    btn_row_tx = tk.Frame(btn_row_outer)
     ttk.Button(btn_row_tx, text="Refresh from file", command=refresh).pack(side="left", padx=(0, PAD_SM))
     ttk.Button(btn_row_tx, text="Edit selected", command=edit_selected).pack(side="left")
+    btn_row_tx.grid(row=0, column=1)
     # Same pack pattern as Summary: pin footer with side=bottom, header with side=top, list expands in middle.
-    btn_row_tx.pack(side="bottom", fill="x", pady=PAD_SM)
+    btn_row_outer.pack(side="bottom", fill="x", pady=PAD_SM)
     sep_below_tree.pack(side="bottom", fill="x", pady=(0, PAD_MD))
-    filter_card.pack(side="top", fill="x")
-    sep_below_filter.pack(side="top", fill="x", pady=PAD_MD)
-    tree_card.pack(fill="both", expand=True)
+    tree_outer.pack(fill="both", expand=True)
     apply_filters()
 
     def on_tab_shown() -> None:
@@ -799,57 +1430,136 @@ def create_transactions_tab(
     return frame, on_tab_shown
 
 
-def create_alerts_tab(parent: ttk.Notebook, state: dict, reload_data: Callable) -> ttk.Frame:
-    """Alerts tab: text area with alert messages."""
-    frame = ttk.Frame(parent, padding=PAD_LG)
-    card = tk.Frame(frame, bg=COLORS["alert_bg"], relief="flat", padx=PAD_LG, pady=PAD_LG, highlightbackground=COLORS["border"], highlightthickness=1)
-    card.pack(fill="both", expand=True)
-
-    text = tk.Text(card, wrap="word", height=18, width=58, state="disabled", bg=COLORS["alert_bg"], fg=COLORS["text"],
-                   font=(FONT_FAMILY, FONT_SIZE), relief="flat", padx=PAD_MD, pady=PAD_MD)
-    text.pack(fill="both", expand=True)
-
-    def refresh():
-        reload_data()
-        pct_rules = [("transport", 30)]
-        messages = run_all_alerts(state["transactions"], state["rules"], pct_rules=pct_rules)
-        text.config(state="normal")
-        text.delete("1.0", "end")
-        if not messages:
-            text.insert("1.0", "No alerts.")
-        else:
-            text.insert("1.0", "\n".join(messages))
-        text.config(state="disabled")
-
-    ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=PAD_MD)
-    ttk.Button(frame, text="Refresh", command=refresh).pack(pady=PAD_SM)
-    refresh()
-    return frame
-
-
 def create_portfolio_tab(parent: ttk.Notebook) -> ttk.Frame:
-    """Portfolio tab: inputs and run simulation."""
-    frame = ttk.Frame(parent, padding=PAD_LG)
-    inputs_card = tk.Frame(frame, bg=COLORS["surface"], relief="flat", padx=PAD_LG, pady=PAD_LG, highlightbackground=COLORS["border"], highlightthickness=1)
-    inputs_card.pack(fill="x")
+    """Portfolio tab: full-page scroll (same pattern as Summary); inputs + results."""
+    outer = ttk.Frame(parent, padding=PAD_LG)
 
-    ttk.Label(inputs_card, text="Initial deposit (HKD):").pack(anchor="w")
+    scroll_wrap = tk.Frame(outer, bg=COLORS["bg"])
+    scroll_wrap.pack(fill="both", expand=True)
+    p_canvas = tk.Canvas(scroll_wrap, bg=COLORS["bg"], highlightthickness=0)
+    p_vsb = ttk.Scrollbar(scroll_wrap, orient="vertical", command=p_canvas.yview)
+    content = tk.Frame(p_canvas, bg=COLORS["bg"])
+    p_inner = p_canvas.create_window((0, 0), window=content, anchor="nw")
+
+    def _p_canvas_width(event: Any) -> None:
+        p_canvas.itemconfigure(p_inner, width=event.width)
+
+    p_canvas.bind("<Configure>", _p_canvas_width)
+
+    def _p_scrollregion(_event: Any) -> None:
+        p_canvas.configure(scrollregion=p_canvas.bbox("all"))
+
+    content.bind("<Configure>", _p_scrollregion)
+    p_canvas.configure(yscrollcommand=p_vsb.set)
+    p_canvas.pack(side="left", fill="both", expand=True)
+    p_vsb.pack(side="right", fill="y")
+
+    _tab_hero(
+        content,
+        "Portfolio (MockWealth)",
+        "Set inputs and run a Monte Carlo-style simulation; results update below.",
+    )
+    _section_header(content, "Simulation inputs")
+
+    inputs_outer, inputs_card = _surface_card_with_accent(content)
+    inputs_outer.pack(fill="x", pady=(0, PAD_MD))
+
+    _field_label(inputs_card, "Initial deposit (HKD)")
     init_var = tk.StringVar(value="10000")
     ttk.Entry(inputs_card, textvariable=init_var, width=15).pack(anchor="w", pady=(0, PAD_MD))
 
-    ttk.Label(inputs_card, text="Monthly contribution (HKD):").pack(anchor="w")
+    _field_label(inputs_card, "Monthly contribution (HKD)")
     monthly_var = tk.StringVar(value="500")
     ttk.Entry(inputs_card, textvariable=monthly_var, width=15).pack(anchor="w", pady=(0, PAD_MD))
 
-    ttk.Label(inputs_card, text="Time horizon (months):").pack(anchor="w")
+    _field_label(inputs_card, "Time horizon (months)")
     months_var = tk.StringVar(value="12")
     ttk.Entry(inputs_card, textvariable=months_var, width=15).pack(anchor="w", pady=(0, PAD_MD))
 
-    ttk.Label(inputs_card, text="Risk tolerance 1-5 (1=conservative, 5=aggressive):").pack(anchor="w")
+    _field_label(inputs_card, "Risk tolerance (1 = conservative … 5 = aggressive)")
     risk_var = tk.StringVar(value="3")
     ttk.Entry(inputs_card, textvariable=risk_var, width=5).pack(anchor="w", pady=(0, PAD_LG))
 
-    ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=PAD_MD)
+    output_outer, output_host = _surface_card_with_accent(content)
+    results_body = tk.Frame(output_host, bg=COLORS["surface"])
+    results_body.pack(fill="both", expand=True)
+
+    def _sync_portfolio_scroll() -> None:
+        p_canvas.update_idletasks()
+        p_canvas.configure(scrollregion=p_canvas.bbox("all"))
+
+    def _bind_portfolio_results_wheel() -> None:
+        handler = _canvas_mousewheel_handler(p_canvas)
+
+        def walk(w: tk.Widget) -> None:
+            for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+                w.bind(seq, handler)
+            for ch in w.winfo_children():
+                walk(ch)
+
+        walk(results_body)
+
+    tk.Label(
+        results_body,
+        text="Run the simulation above to see your allocation mix and projected portfolio values.",
+        bg=COLORS["surface"],
+        fg=COLORS["text_muted"],
+        font=(FONT_FAMILY, FONT_SIZE),
+        wraplength=480,
+        justify="left",
+    ).pack(anchor="w", pady=(0, PAD_SM))
+
+    def _clear_results_body() -> None:
+        for w in results_body.winfo_children():
+            w.destroy()
+
+    def _fmt_hk(x: float) -> str:
+        return f"HK$ {x:,.2f}"
+
+    def _render_results_error(message: str) -> None:
+        _clear_results_body()
+        err = tk.Frame(results_body, bg=COLORS["surface"])
+        err.pack(fill="x")
+        tk.Label(
+            err, text=message, bg=COLORS["surface"], fg=COLORS["error"],
+            font=(FONT_FAMILY, FONT_SIZE), wraplength=480, justify="left",
+        ).pack(anchor="w")
+        _sync_portfolio_scroll()
+        _bind_portfolio_results_wheel()
+
+    def _render_results_success(alloc: dict, result: dict) -> None:
+        _clear_results_body()
+        _portfolio_block_heading(
+            results_body, "Allocation", "How your risk level maps to MockWealth asset classes.",
+        )
+        for ac, w in sorted(((a, wt) for a, wt in alloc.items() if wt > 0), key=lambda x: -x[1]):
+            _portfolio_alloc_bar_row(results_body, ac, w)
+
+        _portfolio_block_heading(
+            results_body, "Projected portfolio value", "Monte Carlo simulation — 1000 paths; amounts in HKD.",
+        )
+        outcomes = tk.Frame(results_body, bg=COLORS["surface"])
+        outcomes.pack(fill="x", pady=(0, PAD_MD))
+        for c in range(3):
+            outcomes.grid_columnconfigure(c, weight=1)
+        _kpi_card(outcomes, "P10 (pessimistic)", _fmt_hk(result["p10"]), "Lower tail").grid(
+            row=0, column=0, sticky="nsew", padx=(0, PAD_SM),
+        )
+        _kpi_card(outcomes, "P50 (median)", _fmt_hk(result["p50"]), "Typical outcome").grid(
+            row=0, column=1, sticky="nsew", padx=PAD_SM,
+        )
+        _kpi_card(outcomes, "P90 (optimistic)", _fmt_hk(result["p90"]), "Upper tail").grid(
+            row=0, column=2, sticky="nsew", padx=(PAD_SM, 0),
+        )
+
+        _portfolio_percent_strip(
+            results_body,
+            "Estimated probability of ending below your total contributions",
+            float(result["loss_prob"]),
+        )
+
+        _sync_portfolio_scroll()
+        _bind_portfolio_results_wheel()
 
     def run_sim():
         try:
@@ -858,84 +1568,21 @@ def create_portfolio_tab(parent: ttk.Notebook) -> ttk.Frame:
             months = int(months_var.get().strip())
             risk = int(risk_var.get().strip())
         except ValueError:
-            output_text.config(state="normal")
-            output_text.delete("1.0", "end")
-            output_text.insert("1.0", "Invalid input. Use numbers.")
-            output_text.config(state="disabled")
+            _render_results_error("Invalid input. Use numbers for all fields.")
             return
         if initial < 0 or monthly < 0 or months <= 0 or risk < 1 or risk > 5:
-            output_text.config(state="normal")
-            output_text.delete("1.0", "end")
-            output_text.insert("1.0", "Invalid values.")
-            output_text.config(state="disabled")
+            _render_results_error("Invalid values. Deposits and contributions must be non-negative; horizon and risk must be in range.")
             return
         assets = portfolio.load_assets(portfolio.ASSETS_FILE)
         alloc = portfolio.get_allocation(risk)
         result = portfolio.simulate(initial, monthly, months, alloc, assets)
-        lines = [
-            "Allocation:",
-        ]
-        for ac, w in alloc.items():
-            if w > 0:
-                lines.append(f"  {ac}: {w*100:.0f}%")
-        lines.extend([
-            "",
-            "Simulated outcomes (1000 paths):",
-            f"  P10 (pessimistic): HK$ {result['p10']:,.2f}",
-            f"  P50 (typical):     HK$ {result['p50']:,.2f}",
-            f"  P90 (optimistic):  HK$ {result['p90']:,.2f}",
-            f"  Loss probability:  {result['loss_prob']*100:.1f}%",
-        ])
-        output_text.config(state="normal")
-        output_text.delete("1.0", "end")
-        output_text.insert("1.0", "\n".join(lines))
-        output_text.config(state="disabled")
+        _render_results_success(alloc, result)
 
-    ttk.Button(frame, text="Run Simulation", command=run_sim).pack(pady=PAD_SM)
-    output_card = tk.Frame(frame, bg=COLORS["surface"], relief="flat", padx=PAD_LG, pady=PAD_LG, highlightbackground=COLORS["border"], highlightthickness=1)
-    output_card.pack(fill="both", expand=True)
-    text_inner = tk.Frame(output_card, bg=COLORS["surface"])
-    text_inner.pack(fill="both", expand=True)
-    output_text = tk.Text(
-        text_inner,
-        wrap="word",
-        height=10,
-        width=52,
-        state="disabled",
-        bg=COLORS["surface"],
-        fg=COLORS["text"],
-        font=(FONT_FAMILY, FONT_SIZE),
-        relief="flat",
-        padx=PAD_MD,
-        pady=PAD_MD,
-    )
-    out_vsb = ttk.Scrollbar(text_inner, orient="vertical", command=output_text.yview)
-    output_text.configure(yscrollcommand=out_vsb.set)
-    output_text.grid(row=0, column=0, sticky="nsew")
-    out_vsb.grid(row=0, column=1, sticky="ns")
-    text_inner.grid_rowconfigure(0, weight=1)
-    text_inner.grid_columnconfigure(0, weight=1)
+    ttk.Separator(content, orient="horizontal").pack(fill="x", pady=PAD_MD)
+    ttk.Button(content, text="Run simulation", command=run_sim).pack(pady=PAD_SM)
+    _section_header(content, "Results")
+    output_outer.pack(fill="x", pady=(0, PAD_SM))
 
-    def _bind_output_wheel(widget: tk.Widget) -> None:
-        def on_wheel(event) -> Optional[str]:
-            delta = 0
-            if event.num == 5:
-                delta = 1
-            elif event.num == 4:
-                delta = -1
-            elif getattr(event, "delta", 0):
-                if sys.platform == "darwin":
-                    delta = -event.delta
-                else:
-                    delta = -1 if event.delta > 0 else 1
-            if delta:
-                output_text.yview_scroll(delta, "units")
-                return "break"
-            return None
-
-        widget.bind("<MouseWheel>", on_wheel)
-        widget.bind("<Button-4>", on_wheel)
-        widget.bind("<Button-5>", on_wheel)
-
-    _bind_output_wheel(output_text)
-    return frame
+    _bind_mousewheel_to_canvas_and_content(p_canvas, content)
+    _sync_portfolio_scroll()
+    return outer

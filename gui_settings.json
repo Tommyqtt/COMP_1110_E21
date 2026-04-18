@@ -1,0 +1,11 @@
+{
+  "pct_rules": [
+    [
+      "food",
+      25.0,
+      60.0
+    ]
+  ],
+  "consecutive_overspend_days": 3,
+  "subscription_creep_threshold_pct": 20.0
+}

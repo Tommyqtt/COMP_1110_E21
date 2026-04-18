@@ -11,10 +11,64 @@ Implements 5 alert types:
 
 from collections import defaultdict
 from datetime import datetime, timedelta
-from typing import List, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 from data import BudgetRule, Transaction
 from stats import by_period, by_category, total_spending
+
+# Prefix → kind id (used by GUI banners). Longer prefixes must come first.
+ALERT_PREFIX_KIND: List[Tuple[str, str]] = [
+    ("[BUDGET % CRITICAL]", "budget_pct_critical"),
+    ("[BUDGET % WARN]", "budget_pct_warn"),
+    ("[OVERSPEND]", "overspend"),
+    ("[BUDGET %]", "budget_pct"),
+    ("[STREAK]", "streak"),
+    ("[UNCATEGORIZED]", "uncategorized"),
+    ("[SUBSCRIPTION CREEP]", "subscription_creep"),
+]
+
+
+def split_alert_message(msg: str) -> Tuple[str, str]:
+    """
+    Return (kind, body) where kind is a short id for styling, body is text without the tag prefix.
+    Unknown / legacy messages use kind 'general'.
+    """
+    s = (msg or "").strip()
+    for prefix, kind in ALERT_PREFIX_KIND:
+        if s.startswith(prefix):
+            return kind, s[len(prefix) :].strip()
+    return "general", s
+
+
+def normalize_pct_rules_rows(
+    pct_rules: Optional[Sequence] = None,
+) -> List[Tuple[str, float, float]]:
+    """
+    Each row is (category, warning_pct, critical_pct). Critical 0 = only warning tier.
+    2-element rows (CLI / legacy) become (c, w, 0).
+    """
+    out: List[Tuple[str, float, float]] = []
+    for r in pct_rules or []:
+        if not isinstance(r, (list, tuple)) or len(r) < 2:
+            continue
+        try:
+            cat = str(r[0]).strip().lower()
+            w = float(r[1])
+            c = float(r[2]) if len(r) >= 3 else 0.0
+        except (TypeError, ValueError, IndexError):
+            continue
+        if not cat:
+            continue
+        if not (0 < w <= 100):
+            continue
+        if c < 0:
+            c = 0.0
+        if c > 100:
+            c = 100.0
+        if c > 0 and c <= w:
+            continue
+        out.append((cat, w, c))
+    return out
 
 
 
@@ -65,11 +119,11 @@ def check_category_caps(
 
 def check_percentage_thresholds(
     transactions: List[Transaction],
-    pct_rules: List[Tuple[str, float]],
+    pct_rules: List[Tuple[str, float, float]],
 ) -> List[str]:
     """
-    Fire an alert when a category exceeds a given percentage of total spending.
-
+    Two tiers per category: warning when share > warning_pct; critical when > critical_pct
+    (if critical_pct > 0 and critical_pct > warning_pct). If critical_pct is 0, only warnings.
     """
     alerts = []
     total = total_spending(transactions)
@@ -77,13 +131,23 @@ def check_percentage_thresholds(
         return alerts
 
     cat_totals = by_category(transactions)
-    for category, max_pct in pct_rules:
+    for category, warn_pct, crit_pct in pct_rules:
         cat_spent = cat_totals.get(category, 0.0)
         actual_pct = (cat_spent / total) * 100
-        if actual_pct > max_pct:
+        if crit_pct > 0 and actual_pct > crit_pct:
             alerts.append(
-                f"[BUDGET %] {category.upper()} is {actual_pct:.1f}% of total spending "
-                f"(limit: {max_pct:.0f}%)"
+                f"[BUDGET % CRITICAL] {category.upper()} is {actual_pct:.1f}% of total spending "
+                f"(critical if above {crit_pct:.0f}%; warning from {warn_pct:.0f}%)"
+            )
+        elif actual_pct > warn_pct:
+            extra = (
+                f" Critical threshold {crit_pct:.0f}%."
+                if crit_pct > 0
+                else " (single warning tier only)."
+            )
+            alerts.append(
+                f"[BUDGET % WARN] {category.upper()} is {actual_pct:.1f}% of total spending "
+                f"(warning if above {warn_pct:.0f}% of total).{extra}"
             )
 
     return alerts
@@ -161,10 +225,10 @@ def check_uncategorized(transactions: List[Transaction]) -> List[str]:
 # 7. Subscription creep detection
 
 
-def check_subscription_creep(transactions: List[Transaction]) -> List[str]:
+def check_subscription_creep(transactions: List[Transaction], threshold_pct: float = 20.0) -> List[str]:
     """
     Compare subscription spending across the two most recent calendar months.
-    If spending increased by more than 20%, fire a subscription creep alert.
+    If spending increased by more than threshold_pct%, fire a subscription creep alert.
     """
     alerts = []
     sub_txns = [t for t in transactions if t.category == "subscriptions"]
@@ -183,10 +247,11 @@ def check_subscription_creep(transactions: List[Transaction]) -> List[str]:
         return alerts
 
     change_pct = ((curr_amt - prev_amt) / prev_amt) * 100
-    if change_pct > 20:
+    if change_pct > threshold_pct:
         alerts.append(
             f"[SUBSCRIPTION CREEP] Subscription spending rose {change_pct:.1f}% "
-            f"from {prev_month} (HK$ {prev_amt:.2f}) to {curr_month} (HK$ {curr_amt:.2f}). "
+            f"from {prev_month} (HK$ {prev_amt:.2f}) to {curr_month} (HK$ {curr_amt:.2f}) "
+            f"(alert threshold: {threshold_pct:.0f}% increase). "
             f"Review your active subscriptions."
         )
 
@@ -199,21 +264,22 @@ def check_subscription_creep(transactions: List[Transaction]) -> List[str]:
 def run_all_alerts(
     transactions: List[Transaction],
     rules: List[BudgetRule],
-    pct_rules: List[Tuple[str, float]] = None,
+    pct_rules: Optional[Sequence] = None,
     consecutive_days: int = 3,
+    subscription_creep_threshold_pct: float = 20.0,
 ) -> List[str]:
     """
     Run all alert checks and return a combined list of alert messages.
+    pct_rules may be 2-tuples (legacy) or 3-tuples (category, warn_pct, critical_pct).
 
     """
-    if pct_rules is None:
-        pct_rules = []
+    pct_norm = normalize_pct_rules_rows(pct_rules)
 
     all_alerts: List[str] = []
     all_alerts += check_category_caps(transactions, rules)
-    all_alerts += check_percentage_thresholds(transactions, pct_rules)
+    all_alerts += check_percentage_thresholds(transactions, pct_norm)
     all_alerts += check_consecutive_overspend(transactions, rules, streak_threshold=consecutive_days)
     all_alerts += check_uncategorized(transactions)
-    all_alerts += check_subscription_creep(transactions)
+    all_alerts += check_subscription_creep(transactions, threshold_pct=subscription_creep_threshold_pct)
 
     return all_alerts

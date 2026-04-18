@@ -51,13 +51,6 @@ def by_period(transactions: List[Transaction], period: str) -> dict:
     return dict(totals)
 
 
-def top_categories(transactions: List[Transaction], n: int = 3) -> List[tuple]:
-    """Top n categories by spending. Returns list of (category, amount)."""
-    cat_totals = by_category(transactions)
-    sorted_items = sorted(cat_totals.items(), key=lambda x: x[1], reverse=True)
-    return sorted_items[:n]
-
-
 def trend_last_n_days(transactions: List[Transaction], n: int) -> float:
     """Total spending in the last n days (from most recent transaction date)."""
     if not transactions:
@@ -120,14 +113,6 @@ def format_summary(transactions: List[Transaction]) -> str:
             lines.append(f"    {cat:<18} HK$ {amt:>8.2f}  ({pct:.1f}%)")
     lines.append(sep)
 
-    # Top 3 categories
-    top = top_categories(transactions)
-    if top:
-        lines.append("  Top 3 categories:")
-        for i, (cat, amt) in enumerate(top, 1):
-            lines.append(f"    {i}. {cat:<16} HK$ {amt:>8.2f}")
-    lines.append(sep)
-
     # Monthly breakdown (most recent 3 months)
     monthly = by_period(transactions, "monthly")
     if monthly:
@@ -136,10 +121,12 @@ def format_summary(transactions: List[Transaction]) -> str:
             lines.append(f"    {key}    HK$ {monthly[key]:>10.2f}")
     lines.append(sep)
 
-    # Trend windows 
+    # Trend windows (rolling from most recent transaction date)
     t7 = trend_last_n_days(transactions, 7)
     t30 = trend_last_n_days(transactions, 30)
+    t365 = trend_last_n_days(transactions, 365)
     lines.append(f"  Last  7 days:        HK$ {t7:>10.2f}")
     lines.append(f"  Last 30 days:        HK$ {t30:>10.2f}")
+    lines.append(f"  Last year:           HK$ {t365:>10.2f}")
 
     return "\n".join(lines)

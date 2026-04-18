@@ -195,10 +195,17 @@ def show_summaries(transactions: List[Transaction]) -> None:
     print(format_summary(transactions))
 
 
+def _pct_rule_triplet(rule: Tuple) -> Tuple[str, float, float]:
+    t = tuple(rule)
+    if len(t) == 2:
+        return (str(t[0]).strip().lower(), float(t[1]), 0.0)
+    return (str(t[0]).strip().lower(), float(t[1]), float(t[2]))
+
+
 def show_alerts(
     transactions: List[Transaction],
     rules: List[BudgetRule],
-    pct_rules: List[Tuple[str, float]],
+    pct_rules: List[Tuple[str, float, float]],
 ) -> None:
     """Display alerts."""
     print("\n--- Alerts ---")
@@ -242,7 +249,7 @@ def configure_budgets(rules: List[BudgetRule]) -> None:
     print("  Budget rule added.")
 
 
-def configure_pct_rules(pct_rules: List[Tuple[str, float]]) -> None:
+def configure_pct_rules(pct_rules: List[Tuple[str, float, float]]) -> None:
     """
     a percentage threshold alert rule.
     Users can configure their own pct_rules.
@@ -264,13 +271,13 @@ def configure_pct_rules(pct_rules: List[Tuple[str, float]]) -> None:
         print("  Invalid number.")
         return
 
-    # Remove existing rule for the same category, then add updated one
-    pct_rules[:] = [(c, p) for c, p in pct_rules if c != category]
-    pct_rules.append((category, max_pct))
+    # Remove existing rule for the same category, then add updated one (warning tier only from CLI)
+    pct_rules[:] = [_pct_rule_triplet(x) for x in pct_rules if _pct_rule_triplet(x)[0] != category]
+    pct_rules.append((category, max_pct, 0.0))
     print(f"  Alert set: {category} > {max_pct:.0f}% of total will trigger a warning.")
 
 
-def export_report(transactions: List[Transaction], rules: List[BudgetRule], pct_rules: List[Tuple[str, float]]) -> None:
+def export_report(transactions: List[Transaction], rules: List[BudgetRule], pct_rules: List[Tuple[str, float, float]]) -> None:
     """
     Export a plain-text report of summaries and alerts to a file.
 
@@ -310,8 +317,8 @@ def menu() -> None:
     transactions = load_transactions(TRANSACTIONS_FILE)
     rules = load_budget_rules(BUDGETS_FILE)
 
-    # Configurable Percentage threshold rules
-    pct_rules: List[Tuple[str, float]] = []
+    # Configurable Percentage threshold rules (category, warn %, critical %; legacy 2-tuples normalized in alerts)
+    pct_rules: List[Tuple[str, float, float]] = []
 
     try:
         import portfolio

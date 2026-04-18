@@ -200,11 +200,4 @@ Independent of budgeting; shares only the project’s “HK$” presentation sty
 - **New alert type**: add a `check_*` function, call it from `run_all_alerts`, add prefix to `ALERT_PREFIX_KIND` and styling in `ui._alert_type_banner`.
 - **New setting**: extend `gui_settings.DEFAULT_SETTINGS` + `_normalize`, Settings tab fields, and pass into `run_all_alerts`.
 - **New CSV field**: extend `data` models and loaders with backward-compatible defaults.
-
----
-
-## 12. One-page mental model
-
-**Data lives in CSV (unified budgets file for caps + settings) → loads into memory → summaries and alerts compute purely from `Transaction` lists and rules → CLI prints text; GUI binds the same functions to widgets and persists edits back to disk.**
-
-This keeps **business logic** (especially `alerts.py` and `stats.py`) **testable without Tk**. The CLI still keeps **`pct_rules` only in memory** unless you extend it to load from `budgets.csv` like the GUI.
+- 

@@ -90,7 +90,7 @@ def check_category_caps(
             continue
 
         # Only look at transactions matching this category
-    cat_txns = [t for t in transactions if t.category == rule.category]
+        cat_txns = [t for t in transactions if t.category == rule.category]
         if not cat_txns:
             continue
         cat_period_totals = by_period(cat_txns, rule.period)
@@ -186,7 +186,7 @@ def check_consecutive_overspend(
 
         for date_str in sorted_dates:
             spent = daily_totals[date_str]
-          if isinstance(date_str, date):
+        if isinstance(date_str, date):
             day = date_str
         else:
             try:

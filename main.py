@@ -183,9 +183,7 @@ def view_transactions(
         return
 
     print(f"\n  Found {len(filtered)} transaction(s):")
-    for t in sorted(filtered, key=lambda x: (x.date, x.amount)):
-        print(f"  {t.date} | HK$ {abs(t.amount):.2f} | {t.category} | {t.description}")
-
+    return sorted(filtered, key=lambda x: (x.date, x.amount))
 
 def show_summaries(transactions: List[Transaction]) -> None:
     """Print summary statistics."""

@@ -1,6 +1,5 @@
 """
 Main CLI
-
 """
 
 import sys
@@ -9,23 +8,28 @@ from typing import List, Tuple
 from data import (
     BUDGETS_PATH,
     BudgetRule,
+    DEFAULT_CATEGORIES,
     Transaction,
     load_budget_rules,
+    load_budgets_bundle,
     load_transactions,
     save_budget_rules,
+    save_budgets_bundle,
     save_transactions,
     validate_amount,
     validate_category,
     validate_date,
-    load_categories,
-    add_category,
-    CATEGORIES,
 )
+from stats import (
+    budget_utilization,
+    by_category,
+    by_period,
+    forecast_period_total,
+    format_summary,
+)
+from alerts import compute_health_score, run_all_alerts
+from gui_settings import pct_rules_as_tuples
 
-from stats import format_summary, by_category, by_period
-from alerts import run_all_alerts
-
-# Default file paths (budgets next to data.py so CLI finds the same file as the GUI)
 TRANSACTIONS_FILE = "transactions.csv"
 BUDGETS_FILE = str(BUDGETS_PATH)
 
@@ -34,9 +38,8 @@ BUDGETS_FILE = str(BUDGETS_PATH)
 
 
 def add_transaction_interactive(transactions: List[Transaction]) -> None:
-    """Prompt user to add a transaction."""
+    """Prompt the user to add a single transaction."""
     print("\n--- Add Transaction ---")
-
     while True:
         date_str = input("Date (YYYY-MM-DD): ").strip()
         if not date_str:
@@ -56,35 +59,29 @@ def add_transaction_interactive(transactions: List[Transaction]) -> None:
             continue
         break
 
-    print(f"  Categories: {', '.join(CATEGORIES)}")
+    print(f"  Categories: {', '.join(DEFAULT_CATEGORIES)}")
     while True:
         category = input("Category: ").strip().lower()
         if not category:
             return
         if not validate_category(category):
-            print("  Invalid category. Use one from the list or add a new one with 'a'.")
+            print("  Invalid category. Use one from the list or a valid word.")
             continue
         break
 
     description = input("Description (optional): ").strip()
-
     transactions.append(Transaction(
-        date=date_str,
-        amount=-amt,
-        category=category,
-        description=description or ""
+        date=date_str, amount=-amt,
+        category=category, description=description or "",
     ))
     print("  Transaction added.")
 
 
 def delete_transaction_interactive(transactions: List[Transaction]) -> None:
-    """
-    List transactions with index numbers and let the user delete one by index.
-    """
+    """List transactions with index numbers and delete one by index."""
     if not transactions:
         print("  No transactions to delete.")
         return
-
     print("\n--- Delete Transaction ---")
     for i, t in enumerate(transactions):
         print(f"  [{i + 1}] {t.date} | HK$ {abs(t.amount):.2f} | {t.category} | {t.description}")
@@ -106,11 +103,10 @@ def delete_transaction_interactive(transactions: List[Transaction]) -> None:
 
 
 def edit_transaction_interactive(transactions: List[Transaction]) -> None:
-    """List transactions with index numbers and let the user edit one by index."""
+    """List transactions with index numbers and edit one by index."""
     if not transactions:
         print("  No transactions to edit.")
         return
-
     print("\n--- Edit Transaction ---")
     for i, t in enumerate(transactions):
         print(f"  [{i + 1}] {t.date} | HK$ {abs(t.amount):.2f} | {t.category} | {t.description}")
@@ -149,7 +145,7 @@ def edit_transaction_interactive(transactions: List[Transaction]) -> None:
             break
         print("  Invalid amount. Enter a positive number.")
 
-    print(f"  Categories: {', '.join(CATEGORIES)}")
+    print(f"  Categories: {', '.join(DEFAULT_CATEGORIES)}")
     while True:
         category = input(f"Category [current: {t.category}, Enter to keep]: ").strip().lower()
         if not category:
@@ -157,17 +153,15 @@ def edit_transaction_interactive(transactions: List[Transaction]) -> None:
             break
         if validate_category(category):
             break
-        print("  Invalid category. Use one from the list or add a new one with 'a'.")
+        print("  Invalid category. Use one from the list or a valid word.")
 
     desc = input(f"Description [current: {t.description}, Enter to keep]: ").strip()
     if not desc:
         desc = t.description
 
     transactions[idx] = Transaction(
-        date=date_str,
-        amount=-amt,
-        category=category,
-        description=desc,
+        date=date_str, amount=-amt,
+        category=category, description=desc,
     )
     print("  Transaction updated.")
 
@@ -177,7 +171,7 @@ def view_transactions(
     filter_date: str = None,
     filter_category: str = None,
 ) -> None:
-    """Display transactions, optionally filtered."""
+    """Display transactions, optionally filtered by date or category."""
     filtered = transactions
     if filter_date:
         filtered = [t for t in filtered if t.date == filter_date]
@@ -194,12 +188,13 @@ def view_transactions(
 
 
 def show_summaries(transactions: List[Transaction]) -> None:
-    """Display summary statistics."""
+    """Print summary statistics."""
     print("\n--- Summary ---")
     print(format_summary(transactions))
 
 
-def _pct_rule_triplet(rule: Tuple) -> Tuple[str, float, float]:
+def _pct_rule_triplet(rule) -> Tuple[str, float, float]:
+    """Coerce a 2- or 3-tuple into (category, warn%, critical%)."""
     t = tuple(rule)
     if len(t) == 2:
         return (str(t[0]).strip().lower(), float(t[1]), 0.0)
@@ -209,11 +204,17 @@ def _pct_rule_triplet(rule: Tuple) -> Tuple[str, float, float]:
 def show_alerts(
     transactions: List[Transaction],
     rules: List[BudgetRule],
-    pct_rules: List[Tuple[str, float, float]],
+    settings: dict,
 ) -> None:
-    """Display alerts."""
+    """Print the combined alert feed using stored settings."""
     print("\n--- Alerts ---")
-    messages = run_all_alerts(transactions, rules, pct_rules=pct_rules)
+    messages = run_all_alerts(
+        transactions,
+        rules,
+        pct_rules=pct_rules_as_tuples(settings),
+        consecutive_days=int(settings.get("consecutive_overspend_days", 3)),
+        subscription_creep_threshold_pct=float(settings.get("subscription_creep_threshold_pct", 20.0)),
+    )
     if not messages:
         print("  No alerts. You are within all budget limits.")
     else:
@@ -221,10 +222,45 @@ def show_alerts(
             print("  " + m)
 
 
+def show_forecasts(
+    transactions: List[Transaction],
+    rules: List[BudgetRule],
+) -> None:
+    """Print the projected end-of-period total for each budget rule."""
+    print("\n--- Forecasts (current period) ---")
+    if not rules:
+        print("  No budget rules configured.")
+        return
+    for r in rules:
+        u = budget_utilization(transactions, r)
+        f = forecast_period_total(transactions, r)
+        print(
+            f"  {r.category} ({r.period}): "
+            f"spent HK$ {u['spent']:.2f}/{r.threshold:.2f} "
+            f"({u['pct']:.0f}%), "
+            f"day {u['days_elapsed']}/{u['days_total']} -> "
+            f"projected HK$ {f['forecast']:.2f} "
+            f"({f['forecast_pct']:.0f}% of cap)"
+        )
+
+
+def show_health(
+    transactions: List[Transaction],
+    rules: List[BudgetRule],
+) -> None:
+    """Print the budget health score breakdown."""
+    print("\n--- Budget Health ---")
+    h = compute_health_score(transactions, rules)
+    print(f"  Score:               {h['score']:.0f}/100 (grade {h['grade']})")
+    print(f"  Max cap utilisation: {h['max_util']:.0f}%")
+    print(f"  Max projected end:   {h['max_forecast']:.0f}%")
+    print(f"  Categorised share:   {h['categorized_pct']:.0f}%")
+
+
 def configure_budgets(rules: List[BudgetRule]) -> None:
     """Add a budget rule interactively."""
     print("\n--- Configure Budget Rule ---")
-    print("Categories:", ", ".join(CATEGORIES))
+    print("Categories:", ", ".join(DEFAULT_CATEGORIES))
 
     category = input("Category: ").strip().lower()
     if not category:
@@ -245,22 +281,20 @@ def configure_budgets(rules: List[BudgetRule]) -> None:
         return
 
     rules.append(BudgetRule(
-        category=category,
-        period=period,
-        threshold=threshold,
-        alert_type="overspend"
+        category=category, period=period,
+        threshold=threshold, alert_type="overspend",
     ))
     print("  Budget rule added.")
 
 
-def configure_pct_rules(pct_rules: List[Tuple[str, float, float]]) -> None:
+def configure_pct_rules(settings: dict) -> None:
     """
-    a percentage threshold alert rule.
-    Users can configure their own pct_rules.
+    Add or update a percentage threshold alert rule and persist it to settings.
+    Fires when a category exceeds the chosen share of total spending.
     """
     print("\n--- Configure Percentage Alert ---")
     print("  This fires an alert when a category exceeds X% of total spending.")
-    print("  Categories:", ", ".join(CATEGORIES))
+    print("  Categories:", ", ".join(DEFAULT_CATEGORIES))
 
     category = input("Category: ").strip().lower()
     if not category:
@@ -275,30 +309,62 @@ def configure_pct_rules(pct_rules: List[Tuple[str, float, float]]) -> None:
         print("  Invalid number.")
         return
 
-    # Remove existing rule for the same category, then add updated one (warning tier only from CLI)
-    pct_rules[:] = [_pct_rule_triplet(x) for x in pct_rules if _pct_rule_triplet(x)[0] != category]
-    pct_rules.append((category, max_pct, 0.0))
+    raw = settings.setdefault("pct_rules", [])
+    raw[:] = [r for r in raw if str(r[0]).strip().lower() != category]
+    raw.append([category, max_pct, 0.0])
     print(f"  Alert set: {category} > {max_pct:.0f}% of total will trigger a warning.")
+    print("  (Use 's' to save so it persists between runs.)")
 
 
-def export_report(transactions: List[Transaction], rules: List[BudgetRule], pct_rules: List[Tuple[str, float, float]]) -> None:
-    """
-    Export a plain-text report of summaries and alerts to a file.
-
-    """
+def export_report(
+    transactions: List[Transaction],
+    rules: List[BudgetRule],
+    settings: dict,
+) -> None:
+    """Write summaries, forecasts, health, and alerts to a plain-text file."""
     filename = input("  Output filename (e.g. report.txt): ").strip()
     if not filename:
         filename = "report.txt"
 
-    lines = []
+    lines: List[str] = []
     lines.append("=" * 50)
     lines.append("  Personal Budget Report")
     lines.append("=" * 50)
     lines.append("")
     lines.append(format_summary(transactions))
     lines.append("")
+
+    h = compute_health_score(transactions, rules)
+    lines.append("--- Budget Health ---")
+    lines.append(
+        f"  Score: {h['score']:.0f}/100 (grade {h['grade']});  "
+        f"max util {h['max_util']:.0f}%, projected {h['max_forecast']:.0f}%, "
+        f"categorised {h['categorized_pct']:.0f}%"
+    )
+    lines.append("")
+
+    lines.append("--- Forecasts ---")
+    if not rules:
+        lines.append("  No budget rules configured.")
+    else:
+        for r in rules:
+            u = budget_utilization(transactions, r)
+            f = forecast_period_total(transactions, r)
+            lines.append(
+                f"  {r.category} ({r.period}): spent HK$ {u['spent']:.2f}/"
+                f"{r.threshold:.2f} ({u['pct']:.0f}%), day "
+                f"{u['days_elapsed']}/{u['days_total']} -> projected HK$ "
+                f"{f['forecast']:.2f} ({f['forecast_pct']:.0f}% of cap)"
+            )
+    lines.append("")
+
     lines.append("--- Alerts ---")
-    alerts = run_all_alerts(transactions, rules, pct_rules=pct_rules)
+    alerts = run_all_alerts(
+        transactions, rules,
+        pct_rules=pct_rules_as_tuples(settings),
+        consecutive_days=int(settings.get("consecutive_overspend_days", 3)),
+        subscription_creep_threshold_pct=float(settings.get("subscription_creep_threshold_pct", 20.0)),
+    )
     if alerts:
         for a in alerts:
             lines.append("  " + a)
@@ -313,52 +379,13 @@ def export_report(transactions: List[Transaction], rules: List[BudgetRule], pct_
         print(f"  Could not save report: {e}")
 
 
-def manage_categories() -> None:
-    """Manage custom categories interactively."""
-    while True:
-        print("\n--- Manage Categories ---")
-        print(f"Current categories ({len(CATEGORIES)}): {', '.join(CATEGORIES)}")
-        print("\nOptions:")
-        print("  1. Add a new category")
-        print("  2. View all categories")
-        print("  3. Back to menu")
-        
-        choice = input("Choice: ").strip().lower()
-        
-        if choice == "1":
-            new_cat = input("  Enter new category name: ").strip().lower()
-            if new_cat:
-                if add_category(new_cat):
-                    print(f"  ✓ Category '{new_cat}' added successfully.")
-                else:
-                    print(f"  ✗ Category '{new_cat}' already exists.")
-            else:
-                print("  ✗ Invalid category name.")
-        elif choice == "2":
-            print(f"\n  All categories ({len(CATEGORIES)}):")
-            for i, cat in enumerate(CATEGORIES, 1):
-                print(f"    {i}. {cat}")
-        elif choice == "3":
-            return
-        else:
-            print("  Unknown option. Please try again.")
-        
-        again = input("\n  Continue managing categories? (y/n): ").strip().lower()
-        if again != "y":
-            return
-
-
 # Main menu loop
 
 
 def menu() -> None:
     """Main menu loop."""
-    load_categories()  # Load custom categories at startup
     transactions = load_transactions(TRANSACTIONS_FILE)
-    rules = load_budget_rules(BUDGETS_FILE)
-
-    # Configurable Percentage threshold rules (category, warn %, critical %; legacy 2-tuples normalized in alerts)
-    pct_rules: List[Tuple[str, float, float]] = []
+    rules, settings = load_budgets_bundle(BUDGETS_FILE)
 
     try:
         import portfolio
@@ -378,12 +405,13 @@ def menu() -> None:
         print("  m. Edit a transaction")
         print("  5. Summaries")
         print("  6. Alerts")
+        print("  f. Forecasts (projected end-of-period)")
+        print("  h. Budget health score")
         print("  7. Configure budget rule (cap)")
         print("  8. Configure % threshold alert")
-        print("  c. Manage categories")
         print("  9. Load data")
         print("  s. Save data")
-        print("  e. Export report to file")        
+        print("  e. Export report to file")
         if has_portfolio:
             print("  p. Portfolio (MockWealth)")
         print("  q. Quit")
@@ -414,30 +442,32 @@ def menu() -> None:
         elif choice == "5":
             show_summaries(transactions)
         elif choice == "6":
-            show_alerts(transactions, rules, pct_rules)
+            show_alerts(transactions, rules, settings)
+        elif choice == "f":
+            show_forecasts(transactions, rules)
+        elif choice == "h":
+            show_health(transactions, rules)
         elif choice == "7":
             configure_budgets(rules)
         elif choice == "8":
-            configure_pct_rules(pct_rules)
-        elif choice == "c":
-            manage_categories()
+            configure_pct_rules(settings)
         elif choice == "9":
             transactions = load_transactions(TRANSACTIONS_FILE)
-            rules = load_budget_rules(BUDGETS_FILE)
+            rules, settings = load_budgets_bundle(BUDGETS_FILE)
             print("  Data loaded.")
         elif choice == "s":
             save_transactions(transactions, TRANSACTIONS_FILE)
-            save_budget_rules(rules, BUDGETS_FILE)
+            settings = save_budgets_bundle(rules, settings, BUDGETS_FILE)
             print("  Data saved.")
         elif choice == "e":
-            export_report(transactions, rules, pct_rules)
+            export_report(transactions, rules, settings)
         elif has_portfolio and choice == "p":
             portfolio.run_portfolio_menu()
         elif choice in ("q", "quit"):
             save = input("Save before quit? (y/n): ").strip().lower()
             if save == "y":
                 save_transactions(transactions, TRANSACTIONS_FILE)
-                save_budget_rules(rules, BUDGETS_FILE)
+                save_budgets_bundle(rules, settings, BUDGETS_FILE)
                 print("  Saved.")
             print("Goodbye.")
             break

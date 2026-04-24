@@ -43,7 +43,6 @@ from data import (
     BUDGETS_PATH,
     BudgetRule,
     DEFAULT_CATEGORIES,
-    CATEGORIES,
     Transaction,
     load_budget_rules,
     load_transactions,
@@ -52,17 +51,17 @@ from data import (
     validate_amount,
     validate_category,
     validate_date,
-    load_categories,
-    add_category,
 )
 from stats import (
     average_daily_spending,
+    budget_utilization,
     by_category,
     by_period,
+    forecast_period_total,
     total_spending,
     trend_last_n_days,
 )
-from alerts import run_all_alerts, split_alert_message
+from alerts import compute_health_score, run_all_alerts, split_alert_message
 import portfolio
 from gui_settings import load_gui_settings, pct_rules_as_tuples
 
@@ -202,7 +201,6 @@ def setup_styles(root: tk.Tk) -> ttk.Style:
 
 def run_gui() -> None:
     """Launch the Tkinter GUI."""
-    load_categories()  # Load custom categories at startup
     root = tk.Tk()
     root.title("Personal Budget Assistant")
     root.geometry("1100x760")
@@ -269,10 +267,6 @@ def run_gui() -> None:
     # Settings tab (unified budgets.csv: caps, % rules, alert thresholds)
     settings_frame = create_settings_tab(nb, state, reload_data)
     nb.add(settings_frame, text="Settings")
-
-    # Categories tab (manage custom categories)
-    categories_frame = create_categories_tab(nb)
-    nb.add(categories_frame, text="Categories")
 
     root.mainloop()
 
@@ -375,7 +369,7 @@ def create_settings_tab(parent: ttk.Notebook, state: dict, reload_data: Callable
             tv_s = tk.StringVar(value=str(br.threshold))
             row_ix = idx + 1
             other_pairs = {(rules[j].category, rules[j].period) for j in range(n_b) if j != idx}
-            cats = list(CATEGORIES)
+            cats = list(DEFAULT_CATEGORIES)
             if br.category and br.category not in cats:
                 cats = [br.category] + cats
             cat_vals = [
@@ -411,9 +405,9 @@ def create_settings_tab(parent: ttk.Notebook, state: dict, reload_data: Callable
             row_bindings_budget.append((cv_s, pv_s, tv_s))
 
         used_pairs = {(r.category, r.period) for r in rules}
-        max_rules = len(CATEGORIES) * len(_BUDGET_PERIODS)
+        max_rules = len(DEFAULT_CATEGORIES) * len(_BUDGET_PERIODS)
         can_add_b = len(used_pairs) < max_rules and any(
-            (c, p) not in used_pairs for c in CATEGORIES for p in _BUDGET_PERIODS
+            (c, p) not in used_pairs for c in DEFAULT_CATEGORIES for p in _BUDGET_PERIODS
         )
         if can_add_b:
             add_budget_btn.state(["!disabled"])
@@ -426,7 +420,7 @@ def create_settings_tab(parent: ttk.Notebook, state: dict, reload_data: Callable
         rules = state.setdefault("rules", [])
         used_pairs = {(r.category, r.period) for r in rules}
         picked = None
-        for c in CATEGORIES:
+        for c in DEFAULT_CATEGORIES:
             for p in _BUDGET_PERIODS:
                 if (c, p) not in used_pairs:
                     picked = (c, p)
@@ -528,7 +522,7 @@ def create_settings_tab(parent: ttk.Notebook, state: dict, reload_data: Callable
                 if j == idx:
                     continue
                 used_elsewhere.add(str(gs["pct_rules"][j][0]).strip().lower())
-            vals = list(CATEGORIES)
+            vals = list(DEFAULT_CATEGORIES)
             cur = cv_s.get().strip().lower()
             if cur and cur not in vals:
                 vals = [cur] + vals
@@ -549,7 +543,7 @@ def create_settings_tab(parent: ttk.Notebook, state: dict, reload_data: Callable
             row_bindings.append((cv_s, wv_s, cr_s))
 
         used_cats = {str(r[0]).strip().lower() for r in (gs.get("pct_rules") or [])}
-        can_add = any(c not in used_cats for c in CATEGORIES)
+        can_add = any(c not in used_cats for c in DEFAULT_CATEGORIES)
         if can_add:
             add_pct_btn.state(["!disabled"])
         else:
@@ -561,7 +555,7 @@ def create_settings_tab(parent: ttk.Notebook, state: dict, reload_data: Callable
         gs = state.setdefault("gui_settings", load_gui_settings())
         used = {str(r[0]).strip().lower() for r in (gs.get("pct_rules") or [])}
         pick = None
-        for c in CATEGORIES:
+        for c in DEFAULT_CATEGORIES:
             if c not in used:
                 pick = c
                 break
@@ -702,77 +696,6 @@ def create_settings_tab(parent: ttk.Notebook, state: dict, reload_data: Callable
     _bind_mousewheel_to_canvas_and_content(canvas, content)
     _sync_settings_scroll()
     return outer
-
-
-def create_categories_tab(parent: ttk.Notebook) -> ttk.Frame:
-    """Categories tab: manage (add/view) custom categories."""
-    frame = ttk.Frame(parent, padding=PAD_LG)
-    _tab_hero(
-        frame,
-        "Manage Categories",
-        "View your custom categories and add new ones for organizing expenses.",
-    )
-
-    card_outer, card = _surface_card_with_accent(frame)
-    card_outer.pack(fill="x", pady=(0, PAD_MD))
-
-    _section_header(card, "Current categories")
-    
-    # Scrollable list of current categories
-    list_frame = tk.Frame(card, bg=COLORS["surface"])
-    list_frame.pack(fill="both", expand=True, pady=(0, PAD_MD))
-    
-    def refresh_category_list():
-        """Refresh the displayed list of categories."""
-        for w in list_frame.winfo_children():
-            w.destroy()
-        
-        if not CATEGORIES:
-            tk.Label(
-                list_frame, text="No categories yet.",
-                bg=COLORS["surface"], fg=COLORS["text_muted"],
-                font=(FONT_FAMILY, FONT_SIZE)
-            ).pack(anchor="w", pady=PAD_SM)
-        else:
-            for i, cat in enumerate(CATEGORIES, 1):
-                cat_item = tk.Frame(list_frame, bg=COLORS["accent_light"], padx=PAD_MD, pady=PAD_SM, highlightbackground=COLORS["border"], highlightthickness=1)
-                cat_item.pack(fill="x", pady=PAD_SM)
-                tk.Label(
-                    cat_item, text=f"{i}. {cat}", bg=COLORS["accent_light"], fg=COLORS["text"],
-                    font=(FONT_FAMILY, FONT_SIZE, "bold"), width=20, anchor="w"
-                ).pack(side="left")
-    
-    refresh_category_list()
-
-    _field_label(card, "Add new category")
-    add_frame = tk.Frame(card, bg=COLORS["surface"])
-    add_frame.pack(fill="x", pady=(0, PAD_LG))
-    
-    new_cat_entry = ttk.Entry(add_frame, width=25)
-    new_cat_entry.pack(side="left", padx=(0, PAD_SM))
-    
-    msg_label = tk.Label(card, text="", bg=COLORS["surface"], fg=COLORS["success"], font=(FONT_FAMILY, FONT_SIZE))
-
-    def do_add():
-        """Add a new category."""
-        category = new_cat_entry.get().strip().lower()
-        if not category:
-            msg_label.config(text="Enter a category name.", fg=COLORS["error"])
-            return
-        if add_category(category):
-            msg_label.config(text=f"Category '{category}' added successfully!", fg=COLORS["success"])
-            new_cat_entry.delete(0, "end")
-            refresh_category_list()
-        else:
-            msg_label.config(text=f"Category '{category}' already exists.", fg=COLORS["error"])
-
-    ttk.Button(add_frame, text="Add category", command=do_add).pack(side="left")
-    msg_label.pack(anchor="w", pady=PAD_SM)
-
-    ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=PAD_MD)
-    ttk.Button(frame, text="Refresh", command=refresh_category_list).pack(pady=PAD_SM)
-    
-    return frame
 
 
 def _category_bar_color(name: str) -> str:
@@ -1007,6 +930,26 @@ _ALERT_BANNER_THEME = {
         "bg": "#fff7ed",
         "title": "Subscription creep",
     },
+    "forecast": {
+        "strip": "#ea580c",
+        "bg": "#fff7ed",
+        "title": "On pace to overspend",
+    },
+    "anomaly": {
+        "strip": "#dc2626",
+        "bg": "#fef2f2",
+        "title": "Spending anomaly",
+    },
+    "recurring": {
+        "strip": "#2563eb",
+        "bg": "#eff6ff",
+        "title": "Recurring charge detected",
+    },
+    "health": {
+        "strip": "#059669",
+        "bg": "#ecfdf5",
+        "title": "Budget health",
+    },
     "general": {
         "strip": "#0e7490",
         "bg": "#ecfeff",
@@ -1057,6 +1000,117 @@ def _alert_type_banner(parent: tk.Widget, kind: str, body: str) -> None:
     ).pack(anchor="w", pady=(PAD_SM, 0))
 
 
+# Grade letter -> strip colour for the health hero card.
+_HEALTH_GRADE_COLORS = {
+    "A": "#059669",
+    "B": "#65a30d",
+    "C": "#ca8a04",
+    "D": "#ea580c",
+    "F": "#dc2626",
+}
+
+
+def _health_hero_card(parent: tk.Widget, state: dict) -> None:
+    """Prominent card with overall budget health score and letter grade."""
+    txs = state["transactions"]
+    rules = state["rules"]
+    if not txs:
+        return
+    h = compute_health_score(txs, rules)
+    grade = h["grade"]
+    strip_c = _HEALTH_GRADE_COLORS.get(grade, COLORS["accent"])
+
+    outer = tk.Frame(parent, bg=COLORS["bg"])
+    outer.pack(fill="x", pady=(0, PAD_MD))
+    card = tk.Frame(outer, bg=COLORS["surface"],
+                    highlightbackground=COLORS["border"], highlightthickness=1)
+    card.pack(fill="x")
+    strip = tk.Frame(card, bg=strip_c, width=6)
+    strip.pack(side="left", fill="y")
+    inner = tk.Frame(card, bg=COLORS["surface"], padx=PAD_LG, pady=PAD_LG)
+    inner.pack(side="left", fill="both", expand=True)
+
+    row = tk.Frame(inner, bg=COLORS["surface"])
+    row.pack(fill="x")
+
+    left = tk.Frame(row, bg=COLORS["surface"])
+    left.pack(side="left", fill="y")
+    tk.Label(left, text="BUDGET HEALTH", bg=COLORS["surface"], fg=strip_c,
+             font=(FONT_FAMILY, FONT_SIZE - 1, "bold")).pack(anchor="w")
+    score_row = tk.Frame(left, bg=COLORS["surface"])
+    score_row.pack(anchor="w", pady=(PAD_SM, 0))
+    tk.Label(score_row, text=f"{h['score']:.0f}", bg=COLORS["surface"],
+             fg=COLORS["text"], font=(FONT_FAMILY, 32, "bold")).pack(side="left")
+    tk.Label(score_row, text="/ 100", bg=COLORS["surface"], fg=COLORS["text_muted"],
+             font=(FONT_FAMILY, FONT_SIZE + 2)).pack(side="left", padx=(PAD_SM, 0))
+    tk.Label(left, text=f"Grade {grade}", bg=COLORS["surface"], fg=strip_c,
+             font=(FONT_FAMILY, FONT_SIZE + 1, "bold")).pack(anchor="w", pady=(PAD_SM, 0))
+
+    right = tk.Frame(row, bg=COLORS["surface"])
+    right.pack(side="right", fill="y")
+    tk.Label(right, text=f"Max cap utilised: {h['max_util']:.0f}%",
+             bg=COLORS["surface"], fg=COLORS["text"],
+             font=(FONT_FAMILY, FONT_SIZE)).pack(anchor="e")
+    tk.Label(right, text=f"Projected end-of-period: {h['max_forecast']:.0f}%",
+             bg=COLORS["surface"], fg=COLORS["text"],
+             font=(FONT_FAMILY, FONT_SIZE)).pack(anchor="e", pady=(PAD_SM, 0))
+    tk.Label(right, text=f"Transactions categorised: {h['categorized_pct']:.0f}%",
+             bg=COLORS["surface"], fg=COLORS["text"],
+             font=(FONT_FAMILY, FONT_SIZE)).pack(anchor="e", pady=(PAD_SM, 0))
+
+
+def _forecast_row(parent: tk.Widget, rule_label: str, fc: dict, bar_width: int = 200) -> None:
+    """Single row showing projected spending vs cap as a coloured bar."""
+    pct = fc["forecast_pct"]
+    if pct >= 110:
+        color = "#dc2626"
+    elif pct >= 90:
+        color = "#ea580c"
+    else:
+        color = "#059669"
+    row = tk.Frame(parent, bg=COLORS["surface"])
+    row.pack(fill="x", pady=PAD_SM)
+    tk.Label(row, text=rule_label, bg=COLORS["surface"], fg=COLORS["text"],
+             font=(FONT_FAMILY, FONT_SIZE), width=22, anchor="w").pack(side="left")
+    track = tk.Frame(row, bg=COLORS["border"], height=14, width=bar_width)
+    track.pack(side="left", padx=(PAD_SM, PAD_SM), pady=2)
+    track.pack_propagate(False)
+    display_pct = max(0.0, min(100.0, pct))
+    fill_w = max(2, int(bar_width * (display_pct / 100.0)))
+    tk.Frame(track, bg=color, height=14, width=fill_w).place(x=0, y=0, relheight=1)
+    tk.Label(row, text=f"{pct:.0f}%", bg=COLORS["surface"], fg=color,
+             font=(FONT_FAMILY, FONT_SIZE, "bold"), width=5, anchor="e").pack(side="right")
+    tk.Label(row,
+             text=f"HK$ {fc['forecast']:,.0f} of {fc['threshold']:,.0f}  "
+                  f"(day {fc['days_elapsed']}/{fc['days_total']})",
+             bg=COLORS["surface"], fg=COLORS["text_muted"],
+             font=(FONT_FAMILY, FONT_SIZE - 1)).pack(side="right", padx=(0, PAD_MD))
+
+
+def _forecasts_section(parent: tk.Widget, state: dict) -> None:
+    """Per-rule projected end-of-period totals shown as coloured bars."""
+    rules = state["rules"]
+    txs = state["transactions"]
+    if not rules or not txs:
+        return
+    _section_header(parent, "Forecasts")
+    card = tk.Frame(parent, bg=COLORS["surface"],
+                    highlightbackground=COLORS["border"], highlightthickness=1)
+    card.pack(fill="x", pady=(0, PAD_SM))
+    inner = tk.Frame(card, bg=COLORS["surface"], padx=PAD_LG, pady=PAD_MD)
+    inner.pack(fill="x")
+    tk.Label(inner,
+             text="Projected end-of-period total at current pace. "
+                  "Green under cap, orange 90%+, red 110%+.",
+             bg=COLORS["surface"], fg=COLORS["text_muted"],
+             font=(FONT_FAMILY, FONT_SIZE - 1), wraplength=520,
+             justify="left").pack(anchor="w", pady=(0, PAD_SM))
+    for r in rules:
+        fc = forecast_period_total(txs, r)
+        label = f"{r.category.capitalize()} ({r.period})"
+        _forecast_row(inner, label, fc)
+
+
 def _summary_alerts_block(parent: tk.Widget, state: dict) -> None:
     """Alerts only (banners). Stats are built separately below a 'Spending statistics' header."""
     gs = state.get("gui_settings") or load_gui_settings()
@@ -1069,6 +1123,7 @@ def _summary_alerts_block(parent: tk.Widget, state: dict) -> None:
         pct_rules=pct_rules,
         consecutive_days=consec,
         subscription_creep_threshold_pct=creep_thr,
+        include_health=False,
     )
     _section_header(parent, "Alerts")
     if not messages:
@@ -1094,6 +1149,7 @@ def _refresh_summary_dashboard(
         w.destroy()
 
     _summary_alerts_block(content, state)
+    _health_hero_card(content, state)
     _section_header(content, "Spending statistics")
 
     txs = state["transactions"]
@@ -1162,6 +1218,8 @@ def _refresh_summary_dashboard(
     _kpi_card(mom, "Last year", _fmt_hk(t365), f"{pct365:.1f}% of total spending").grid(
         row=0, column=2, sticky="nsew", padx=(PAD_SM, 0),
     )
+
+    _forecasts_section(content, state)
 
     monthly = by_period(txs, "monthly")
     if monthly:
@@ -1238,7 +1296,7 @@ def create_add_tab(parent: ttk.Notebook, state: dict, save_data: Callable, reloa
 
     _field_label(card, "Category")
     cat_var = tk.StringVar()
-    cat_combo = ttk.Combobox(card, textvariable=cat_var, values=CATEGORIES, width=20)
+    cat_combo = ttk.Combobox(card, textvariable=cat_var, values=DEFAULT_CATEGORIES, width=20)
     cat_combo.pack(anchor="w", pady=(0, PAD_MD))
 
     _field_label(card, "Description (optional)")
@@ -1301,7 +1359,7 @@ def create_transactions_tab(
     desc_filter_var = tk.StringVar()
 
     def category_choices() -> List[str]:
-        cats = {c for c in CATEGORIES}
+        cats = {c for c in DEFAULT_CATEGORIES}
         for t in state["transactions"]:
             cats.add(t.category)
         return [""] + sorted(cats)
@@ -1577,7 +1635,11 @@ def create_portfolio_tab(parent: ttk.Notebook) -> ttk.Frame:
 
     _field_label(inputs_card, "Risk tolerance (1 = conservative … 5 = aggressive)")
     risk_var = tk.StringVar(value="3")
-    ttk.Entry(inputs_card, textvariable=risk_var, width=5).pack(anchor="w", pady=(0, PAD_LG))
+    ttk.Entry(inputs_card, textvariable=risk_var, width=5).pack(anchor="w", pady=(0, PAD_MD))
+
+    _field_label(inputs_card, "Random seed (optional — same seed = same result)")
+    seed_var = tk.StringVar(value="")
+    ttk.Entry(inputs_card, textvariable=seed_var, width=15).pack(anchor="w", pady=(0, PAD_LG))
 
     output_outer, output_host = _surface_card_with_accent(content)
     results_body = tk.Frame(output_host, bg=COLORS["surface"])
@@ -1651,6 +1713,34 @@ def create_portfolio_tab(parent: ttk.Notebook) -> ttk.Frame:
             row=0, column=2, sticky="nsew", padx=(PAD_SM, 0),
         )
 
+        _portfolio_block_heading(
+            results_body, "Risk metrics", "Tail loss, drawdown, volatility, and risk-adjusted return.",
+        )
+        risk_grid = tk.Frame(results_body, bg=COLORS["surface"])
+        risk_grid.pack(fill="x", pady=(0, PAD_MD))
+        for c in range(2):
+            risk_grid.grid_columnconfigure(c, weight=1)
+        _kpi_card(
+            risk_grid, "5% VaR",
+            _fmt_hk(result["var_5pct"]),
+            "Loss in worst 5% of paths",
+        ).grid(row=0, column=0, sticky="nsew", padx=(0, PAD_SM), pady=(0, PAD_SM))
+        _kpi_card(
+            risk_grid, "Avg max drawdown",
+            f"{result['max_drawdown_avg'] * 100:.1f}%",
+            "Peak-to-trough drop",
+        ).grid(row=0, column=1, sticky="nsew", padx=(PAD_SM, 0), pady=(0, PAD_SM))
+        _kpi_card(
+            risk_grid, "Volatility",
+            _fmt_hk(result["volatility"]),
+            "Stdev of final values",
+        ).grid(row=1, column=0, sticky="nsew", padx=(0, PAD_SM))
+        _kpi_card(
+            risk_grid, "Sharpe-like",
+            f"{result['sharpe_like']:.2f}",
+            f"Annualized {result['annualized_return'] * 100:.2f}%",
+        ).grid(row=1, column=1, sticky="nsew", padx=(PAD_SM, 0))
+
         _portfolio_percent_strip(
             results_body,
             "Estimated probability of ending below your total contributions",
@@ -1672,9 +1762,17 @@ def create_portfolio_tab(parent: ttk.Notebook) -> ttk.Frame:
         if initial < 0 or monthly < 0 or months <= 0 or risk < 1 or risk > 5:
             _render_results_error("Invalid values. Deposits and contributions must be non-negative; horizon and risk must be in range.")
             return
+        seed_raw = seed_var.get().strip()
+        seed = None
+        if seed_raw:
+            try:
+                seed = int(seed_raw)
+            except ValueError:
+                _render_results_error("Seed must be a whole number (or blank).")
+                return
         assets = portfolio.load_assets(portfolio.ASSETS_FILE)
         alloc = portfolio.get_allocation(risk)
-        result = portfolio.simulate(initial, monthly, months, alloc, assets)
+        result = portfolio.simulate(initial, monthly, months, alloc, assets, seed=seed)
         _render_results_success(alloc, result)
 
     ttk.Separator(content, orient="horizontal").pack(fill="x", pady=PAD_MD)

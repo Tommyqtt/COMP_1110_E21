@@ -476,8 +476,5 @@ def menu() -> None:
 
 
 if __name__ == "__main__":
-    if "--gui" in sys.argv or "-g" in sys.argv:
-        from ui import run_gui
-        run_gui()
-    else:
-        menu()
+    from ui import run_gui
+    run_gui()

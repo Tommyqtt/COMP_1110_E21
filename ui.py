@@ -43,6 +43,7 @@ from data import (
     BUDGETS_PATH,
     BudgetRule,
     DEFAULT_CATEGORIES,
+    CATEGORIES,
     Transaction,
     load_budget_rules,
     load_transactions,
@@ -51,6 +52,8 @@ from data import (
     validate_amount,
     validate_category,
     validate_date,
+    load_categories,
+    add_category,
 )
 from stats import (
     average_daily_spending,
@@ -201,6 +204,7 @@ def setup_styles(root: tk.Tk) -> ttk.Style:
 
 def run_gui() -> None:
     """Launch the Tkinter GUI."""
+    load_categories()  # Load custom categories at startup
     root = tk.Tk()
     root.title("Personal Budget Assistant")
     root.geometry("1100x760")
@@ -267,6 +271,10 @@ def run_gui() -> None:
     # Settings tab (unified budgets.csv: caps, % rules, alert thresholds)
     settings_frame = create_settings_tab(nb, state, reload_data)
     nb.add(settings_frame, text="Settings")
+
+    # Categories tab (manage custom categories)
+    categories_frame = create_categories_tab(nb)
+    nb.add(categories_frame, text="Categories")
 
     root.mainloop()
 
@@ -369,7 +377,7 @@ def create_settings_tab(parent: ttk.Notebook, state: dict, reload_data: Callable
             tv_s = tk.StringVar(value=str(br.threshold))
             row_ix = idx + 1
             other_pairs = {(rules[j].category, rules[j].period) for j in range(n_b) if j != idx}
-            cats = list(DEFAULT_CATEGORIES)
+            cats = list(CATEGORIES)
             if br.category and br.category not in cats:
                 cats = [br.category] + cats
             cat_vals = [
@@ -405,9 +413,9 @@ def create_settings_tab(parent: ttk.Notebook, state: dict, reload_data: Callable
             row_bindings_budget.append((cv_s, pv_s, tv_s))
 
         used_pairs = {(r.category, r.period) for r in rules}
-        max_rules = len(DEFAULT_CATEGORIES) * len(_BUDGET_PERIODS)
+        max_rules = len(CATEGORIES) * len(_BUDGET_PERIODS)
         can_add_b = len(used_pairs) < max_rules and any(
-            (c, p) not in used_pairs for c in DEFAULT_CATEGORIES for p in _BUDGET_PERIODS
+            (c, p) not in used_pairs for c in CATEGORIES for p in _BUDGET_PERIODS
         )
         if can_add_b:
             add_budget_btn.state(["!disabled"])
@@ -420,7 +428,7 @@ def create_settings_tab(parent: ttk.Notebook, state: dict, reload_data: Callable
         rules = state.setdefault("rules", [])
         used_pairs = {(r.category, r.period) for r in rules}
         picked = None
-        for c in DEFAULT_CATEGORIES:
+        for c in CATEGORIES:
             for p in _BUDGET_PERIODS:
                 if (c, p) not in used_pairs:
                     picked = (c, p)
@@ -522,7 +530,7 @@ def create_settings_tab(parent: ttk.Notebook, state: dict, reload_data: Callable
                 if j == idx:
                     continue
                 used_elsewhere.add(str(gs["pct_rules"][j][0]).strip().lower())
-            vals = list(DEFAULT_CATEGORIES)
+            vals = list(CATEGORIES)
             cur = cv_s.get().strip().lower()
             if cur and cur not in vals:
                 vals = [cur] + vals
@@ -543,7 +551,7 @@ def create_settings_tab(parent: ttk.Notebook, state: dict, reload_data: Callable
             row_bindings.append((cv_s, wv_s, cr_s))
 
         used_cats = {str(r[0]).strip().lower() for r in (gs.get("pct_rules") or [])}
-        can_add = any(c not in used_cats for c in DEFAULT_CATEGORIES)
+        can_add = any(c not in used_cats for c in CATEGORIES)
         if can_add:
             add_pct_btn.state(["!disabled"])
         else:
@@ -555,7 +563,7 @@ def create_settings_tab(parent: ttk.Notebook, state: dict, reload_data: Callable
         gs = state.setdefault("gui_settings", load_gui_settings())
         used = {str(r[0]).strip().lower() for r in (gs.get("pct_rules") or [])}
         pick = None
-        for c in DEFAULT_CATEGORIES:
+        for c in CATEGORIES:
             if c not in used:
                 pick = c
                 break
@@ -697,6 +705,75 @@ def create_settings_tab(parent: ttk.Notebook, state: dict, reload_data: Callable
     _sync_settings_scroll()
     return outer
 
+def create_categories_tab(parent: ttk.Notebook) -> ttk.Frame:
+    """Categories tab: manage (add/view) custom categories."""
+    frame = ttk.Frame(parent, padding=PAD_LG)
+    _tab_hero(
+        frame,
+        "Manage Categories",
+        "View your custom categories and add new ones for organizing expenses.",
+    )
+
+    card_outer, card = _surface_card_with_accent(frame)
+    card_outer.pack(fill="x", pady=(0, PAD_MD))
+
+    _section_header(card, "Current categories")
+    
+    # Scrollable list of current categories
+    list_frame = tk.Frame(card, bg=COLORS["surface"])
+    list_frame.pack(fill="both", expand=True, pady=(0, PAD_MD))
+    
+    def refresh_category_list():
+        """Refresh the displayed list of categories."""
+        for w in list_frame.winfo_children():
+            w.destroy()
+        
+        if not CATEGORIES:
+            tk.Label(
+                list_frame, text="No categories yet.",
+                bg=COLORS["surface"], fg=COLORS["text_muted"],
+                font=(FONT_FAMILY, FONT_SIZE)
+            ).pack(anchor="w", pady=PAD_SM)
+        else:
+            for i, cat in enumerate(CATEGORIES, 1):
+                cat_item = tk.Frame(list_frame, bg=COLORS["accent_light"], padx=PAD_MD, pady=PAD_SM, highlightbackground=COLORS["border"], highlightthickness=1)
+                cat_item.pack(fill="x", pady=PAD_SM)
+                tk.Label(
+                    cat_item, text=f"{i}. {cat}", bg=COLORS["accent_light"], fg=COLORS["text"],
+                    font=(FONT_FAMILY, FONT_SIZE, "bold"), width=20, anchor="w"
+                ).pack(side="left")
+    
+    refresh_category_list()
+
+    _field_label(card, "Add new category")
+    add_frame = tk.Frame(card, bg=COLORS["surface"])
+    add_frame.pack(fill="x", pady=(0, PAD_LG))
+    
+    new_cat_entry = ttk.Entry(add_frame, width=25)
+    new_cat_entry.pack(side="left", padx=(0, PAD_SM))
+    
+    msg_label = tk.Label(card, text="", bg=COLORS["surface"], fg=COLORS["success"], font=(FONT_FAMILY, FONT_SIZE))
+
+    def do_add():
+        """Add a new category."""
+        category = new_cat_entry.get().strip().lower()
+        if not category:
+            msg_label.config(text="Enter a category name.", fg=COLORS["error"])
+            return
+        if add_category(category):
+            msg_label.config(text=f"Category '{category}' added successfully!", fg=COLORS["success"])
+            new_cat_entry.delete(0, "end")
+            refresh_category_list()
+        else:
+            msg_label.config(text=f"Category '{category}' already exists.", fg=COLORS["error"])
+
+    ttk.Button(add_frame, text="Add category", command=do_add).pack(side="left")
+    msg_label.pack(anchor="w", pady=PAD_SM)
+
+    ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=PAD_MD)
+    ttk.Button(frame, text="Refresh", command=refresh_category_list).pack(pady=PAD_SM)
+    
+    return frame
 
 def _category_bar_color(name: str) -> str:
     h = sum(ord(c) for c in name.lower())
@@ -1296,7 +1373,7 @@ def create_add_tab(parent: ttk.Notebook, state: dict, save_data: Callable, reloa
 
     _field_label(card, "Category")
     cat_var = tk.StringVar()
-    cat_combo = ttk.Combobox(card, textvariable=cat_var, values=DEFAULT_CATEGORIES, width=20)
+    cat_combo = ttk.Combobox(card, textvariable=cat_var, values=CATEGORIES, width=20)
     cat_combo.pack(anchor="w", pady=(0, PAD_MD))
 
     _field_label(card, "Description (optional)")
@@ -1359,7 +1436,7 @@ def create_transactions_tab(
     desc_filter_var = tk.StringVar()
 
     def category_choices() -> List[str]:
-        cats = {c for c in DEFAULT_CATEGORIES}
+        cats = {c for c in CATEGORIES}
         for t in state["transactions"]:
             cats.add(t.category)
         return [""] + sorted(cats)

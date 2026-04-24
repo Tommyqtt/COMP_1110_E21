@@ -8,7 +8,6 @@ from typing import List, Tuple
 from data import (
     BUDGETS_PATH,
     BudgetRule,
-    DEFAULT_CATEGORIES,
     Transaction,
     load_budget_rules,
     load_budgets_bundle,
@@ -19,6 +18,9 @@ from data import (
     validate_amount,
     validate_category,
     validate_date,
+    load_categories,
+    add_category,
+    CATEGORIES,
 )
 from stats import (
     budget_utilization,
@@ -59,13 +61,13 @@ def add_transaction_interactive(transactions: List[Transaction]) -> None:
             continue
         break
 
-    print(f"  Categories: {', '.join(DEFAULT_CATEGORIES)}")
+    print(f"  Categories: {', '.join(CATEGORIES)}")
     while True:
         category = input("Category: ").strip().lower()
         if not category:
             return
         if not validate_category(category):
-            print("  Invalid category. Use one from the list or a valid word.")
+            print("  Invalid category. Use one from the list or add a new one with 'a'.")
             continue
         break
 
@@ -145,7 +147,7 @@ def edit_transaction_interactive(transactions: List[Transaction]) -> None:
             break
         print("  Invalid amount. Enter a positive number.")
 
-    print(f"  Categories: {', '.join(DEFAULT_CATEGORIES)}")
+    print(f"  Categories: {', '.join(CATEGORIES)}")
     while True:
         category = input(f"Category [current: {t.category}, Enter to keep]: ").strip().lower()
         if not category:
@@ -153,7 +155,7 @@ def edit_transaction_interactive(transactions: List[Transaction]) -> None:
             break
         if validate_category(category):
             break
-        print("  Invalid category. Use one from the list or a valid word.")
+        print("  Invalid category. Use one from the list or add a new one with 'a'.")
 
     desc = input(f"Description [current: {t.description}, Enter to keep]: ").strip()
     if not desc:
@@ -260,7 +262,7 @@ def show_health(
 def configure_budgets(rules: List[BudgetRule]) -> None:
     """Add a budget rule interactively."""
     print("\n--- Configure Budget Rule ---")
-    print("Categories:", ", ".join(DEFAULT_CATEGORIES))
+    print("Categories:", ", ".join(CATEGORIES))
 
     category = input("Category: ").strip().lower()
     if not category:
@@ -294,7 +296,7 @@ def configure_pct_rules(settings: dict) -> None:
     """
     print("\n--- Configure Percentage Alert ---")
     print("  This fires an alert when a category exceeds X% of total spending.")
-    print("  Categories:", ", ".join(DEFAULT_CATEGORIES))
+    print("  Categories:", ", ".join(CATEGORIES))
 
     category = input("Category: ").strip().lower()
     if not category:
@@ -378,12 +380,46 @@ def export_report(
     except OSError as e:
         print(f"  Could not save report: {e}")
 
+def manage_categories() -> None:
+    """Manage custom categories interactively."""
+    while True:
+        print("\n--- Manage Categories ---")
+        print(f"Current categories ({len(CATEGORIES)}): {', '.join(CATEGORIES)}")
+        print("\nOptions:")
+        print("  1. Add a new category")
+        print("  2. View all categories")
+        print("  3. Back to menu")
+        
+        choice = input("Choice: ").strip().lower()
+        
+        if choice == "1":
+            new_cat = input("  Enter new category name: ").strip().lower()
+            if new_cat:
+                if add_category(new_cat):
+                    print(f"  ✓ Category '{new_cat}' added successfully.")
+                else:
+                    print(f"  ✗ Category '{new_cat}' already exists.")
+            else:
+                print("  ✗ Invalid category name.")
+        elif choice == "2":
+            print(f"\n  All categories ({len(CATEGORIES)}):")
+            for i, cat in enumerate(CATEGORIES, 1):
+                print(f"    {i}. {cat}")
+        elif choice == "3":
+            return
+        else:
+            print("  Unknown option. Please try again.")
+        
+        again = input("\n  Continue managing categories? (y/n): ").strip().lower()
+        if again != "y":
+            return
 
 # Main menu loop
 
 
 def menu() -> None:
     """Main menu loop."""
+    load_categories()  # Load custom categories at startup
     transactions = load_transactions(TRANSACTIONS_FILE)
     rules, settings = load_budgets_bundle(BUDGETS_FILE)
 
@@ -409,6 +445,7 @@ def menu() -> None:
         print("  h. Budget health score")
         print("  7. Configure budget rule (cap)")
         print("  8. Configure % threshold alert")
+        print("  c. Manage categories")
         print("  9. Load data")
         print("  s. Save data")
         print("  e. Export report to file")
@@ -451,6 +488,8 @@ def menu() -> None:
             configure_budgets(rules)
         elif choice == "8":
             configure_pct_rules(settings)
+        elif choice == "c":
+            manage_categories()
         elif choice == "9":
             transactions = load_transactions(TRANSACTIONS_FILE)
             rules, settings = load_budgets_bundle(BUDGETS_FILE)

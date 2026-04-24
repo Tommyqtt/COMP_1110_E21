@@ -12,6 +12,8 @@ Alert kinds:
   8. Recurring non-subscription payments (likely mis-categorized)
   9. Overall budget health score summary
 """
+from data import CATEGORIES
+from stats import get_category_totals
 
 from collections import defaultdict
 from datetime import date, datetime, timedelta
@@ -403,3 +405,18 @@ def run_all_alerts(
     if include_health:
         out += check_health_summary(transactions, rules)
     return out
+
+# Assume you store budget limits in a dictionary or load them from budgets.csv
+budget_caps = {
+    "food": 2000,
+    "transport": 500
+}
+
+def check_category_alerts(transactions: list):
+    totals = get_category_totals(transactions) # using the updated stats function
+    
+    for cat in CATEGORIES:
+        # If a new category exists but has no cap set yet, skip it or give it a default
+        cap = budget_caps.get(cat, None) 
+        if cap is not None and totals.get(cat, 0) > cap:
+            print(f"⚠️ ALERT: You have exceeded your budget for '{cat}'! (Spent: {totals[cat]}, Cap: {cap})")

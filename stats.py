@@ -9,6 +9,7 @@ from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 
 from data import BudgetRule, Transaction
+from data import CATEGORIES
 
 
 def total_spending(transactions: List[Transaction]) -> float:
@@ -231,3 +232,21 @@ def format_summary(transactions: List[Transaction]) -> str:
     lines.append(f"  Last 7 days:  HK$ {t7:.2f}")
     lines.append(f"  Last 30 days: HK$ {t30:.2f}")
     return "\n".join(lines) if lines else "  No transactions."
+
+def get_category_totals(transactions: list) -> dict:
+    """Dynamically calculates totals for all available categories."""
+    # Initialize the dictionary dynamically based on current categories
+    totals = {cat: 0.0 for cat in CATEGORIES} 
+    
+    for t in transactions:
+        cat = t.get('category', 'others')
+        amount = float(t.get('amount', 0))
+        
+        # If the user has a transaction from an old category that was deleted, 
+        # or we want to capture it anyway:
+        if cat not in totals:
+            totals[cat] = 0.0 
+            
+        totals[cat] += amount
+        
+    return totals

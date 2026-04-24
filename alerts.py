@@ -16,6 +16,9 @@ from typing import List, Optional, Sequence, Tuple
 from data import BudgetRule, Transaction
 from stats import by_period, by_category, total_spending
 
+from data import CATEGORIES
+from stats import get_category_totals
+
 # Prefix → kind id (used by GUI banners). Longer prefixes must come first.
 ALERT_PREFIX_KIND: List[Tuple[str, str]] = [
     ("[BUDGET % CRITICAL]", "budget_pct_critical"),
@@ -294,3 +297,18 @@ def run_all_alerts(
     all_alerts += check_subscription_creep(transactions, threshold_pct=subscription_creep_threshold_pct)
 
     return all_alerts
+
+# Assume you store budget limits in a dictionary or load them from budgets.csv
+budget_caps = {
+    "food": 2000,
+    "transport": 500
+}
+
+def check_category_alerts(transactions: list):
+    totals = get_category_totals(transactions) # using the updated stats function
+    
+    for cat in CATEGORIES:
+        # If a new category exists but has no cap set yet, skip it or give it a default
+        cap = budget_caps.get(cat, None) 
+        if cap is not None and totals.get(cat, 0) > cap:
+            print(f"⚠️ ALERT: You have exceeded your budget for '{cat}'! (Spent: {totals[cat]}, Cap: {cap})")

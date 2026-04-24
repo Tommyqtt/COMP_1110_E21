@@ -1,0 +1,5 @@
+food
+transport
+housing
+entertainment
+others

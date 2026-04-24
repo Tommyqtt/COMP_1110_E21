@@ -78,6 +78,7 @@ CASH,cash,1,0.001,0.001,0,Low risk
 | **6** | Alerts |
 | **7** | Configure budget rule (cap) |
 | **8** | Configure % threshold alert (session only; see budgets note above) |
+| **c** | Manage categories (add/view custom categories) |
 | **9** | Load data from disk |
 | **s** | Save data |
 | **e** | Export report to file |

@@ -9,9 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-
-# Default categories
-DEFAULT_CATEGORIES = ["food", "transport", "subscriptions", "shopping", "other"]
+import os
 
 # Single config file: budget caps + % rules + alert settings (replaces separate gui_settings.json)
 BUDGETS_FILE = "budgets.csv"
@@ -318,7 +316,37 @@ def validate_amount(value: str) -> Optional[float]:
         return None
 
 
+# Category management system
+DEFAULT_CATEGORIES = ["food", "transport", "housing", "entertainment", "others"]
+CATEGORY_FILE = "categories.txt"
+
+CATEGORIES = []
+
+
+def load_categories():
+    global CATEGORIES
+    if os.path.exists(CATEGORY_FILE):
+        with open(CATEGORY_FILE, "r", encoding="utf-8") as f:
+            loaded = [line.strip() for line in f.readlines() if line.strip()]
+            CATEGORIES.clear()
+            CATEGORIES.extend(loaded)
+    else:
+        CATEGORIES.clear()
+        CATEGORIES.extend(DEFAULT_CATEGORIES)
+        save_categories()
+
+def save_categories():
+    with open(CATEGORY_FILE, "w", encoding="utf-8") as f:
+        for cat in CATEGORIES:
+            f.write(f"{cat}\n")
+
+def add_category(new_category: str) -> bool:
+    clean_cat = new_category.strip().lower()
+    if clean_cat and clean_cat not in CATEGORIES:
+        CATEGORIES.append(clean_cat)
+        save_categories()
+        return True
+    return False
+
 def validate_category(category: str) -> bool:
-    """Return True if category is valid (in default list or non-empty)."""
-    c = (category or "").strip().lower()
-    return c in DEFAULT_CATEGORIES or (len(c) > 0 and c.isalnum())
+    return category.lower() in CATEGORIES

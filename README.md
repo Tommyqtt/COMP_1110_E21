@@ -24,6 +24,21 @@ Run from the **project root** (the folder that contains `main.py`) so **`transac
 
 For system design and alert rules, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## Key Features
+* **Predictive Analytics:** Implemented a financial forecasting engine in `stats.py` that calculates your "Burn Rate" to predict total month-end spending.
+* **Subscription Creep Detection:** (Case Study 3) Automated detection of month-over-month increases in recurring costs.
+* **Dynamic Budget Rules:** Support for daily, weekly, and monthly caps with real-time overspend alerts.
+
+### Summary Preview
+When you run the summary, the assistant provides:
+```text
+==============================
+      FINANCIAL SUMMARY      
+==============================
+Total Outgoing:  HK$ 1,250.00
+Daily Burn Rate: HK$ 41.67
+Month Forecast:  HK$ 1,291.77
+------------------------------
 ## File Formats
 
 ### transactions.csv
@@ -118,7 +133,7 @@ A design system (colors, typography, spacing) is applied across all tabs. See [U
 ├── ui.py              # Tkinter GUI (Summary, Add, Transactions, Portfolio, Settings)
 ├── data.py            # Transaction, BudgetRule, CSV I/O, unified budgets bundle
 ├── gui_settings.py    # Normalize alert settings dict (used with budgets.csv)
-├── stats.py           # Summary statistics
+├── stats.py           # Summary statistics & Predictive Analytics logic
 ├── alerts.py          # Rule-based alerts
 ├── portfolio.py       # MockWealth simulation
 ├── assets.csv         # Mock asset universe
@@ -133,6 +148,11 @@ A design system (colors, typography, spacing) is applied across all tabs. See [U
 │   └── test_data/
 └── README.md
 ```
+
+## Future Roadmap
+Data Visualization: Integration of Matplotlib to turn the `stats.py` forecasts into visual trend lines.
+Automated Categorization: Using basic keyword matching to automatically assign categories like "food" or "transport" to new transactions.
+Exporting Reports: Capability to export the Financial Summary as a PDF or Excel file for external record-keeping.
 
 ## License
 

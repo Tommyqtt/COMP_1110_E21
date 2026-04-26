@@ -145,6 +145,7 @@ A design system (colors, typography, spacing) is applied across all tabs. See [U
 │   ├── test_core_logic.py
 │   ├── test_alert_messages.py
 │   ├── test_generator.py
+│   ├── test_predictive.py
 │   └── test_data/
 └── README.md
 ```

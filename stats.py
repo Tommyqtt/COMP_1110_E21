@@ -250,3 +250,28 @@ def get_category_totals(transactions: list) -> dict:
         totals[cat] += amount
         
     return totals
+
+def get_monthly_forecast(transactions: list) -> dict:
+    """Calculates spending velocity and predicts total end-of-month spending."""
+    today = date.today()
+    current_month_tx = []
+    
+    for t in transactions:
+        # Handling both object and dictionary formats safely
+        amt = t.amount if hasattr(t, 'amount') else t.get('amount', 0)
+        dt = _parsed_date(t)
+        
+        if dt and dt.month == today.month and amt < 0:
+            current_month_tx.append(abs(amt))
+    
+    total_spent = sum(current_month_tx)
+    days_passed = today.day
+    _, days_in_month = calendar.monthrange(today.year, today.month)
+    
+    if days_passed <= 0:
+        return {"current_total": total_spent, "burn_rate": 0, "forecasted_total": total_spent}
+
+    daily_burn_rate = total_spent / days_passed
+    projected_total = daily_burn_rate * days_in_month
+
+    return {"current_total": total_spent, "burn_rate": daily_burn_rate, "forecasted_total": projected_total}

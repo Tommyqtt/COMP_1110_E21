@@ -251,27 +251,51 @@ def get_category_totals(transactions: list) -> dict:
         
     return totals
 
-def get_monthly_forecast(transactions: list) -> dict:
-    """Calculates spending velocity and predicts total end-of-month spending."""
-    today = date.today()
-    current_month_tx = []
+def get_monthly_forecast(transactions: List[Transaction]) -> dict:
+    """
+    Calculates the daily burn rate and predicts total spending for the month.
+    Handles edge cases where no transactions exist or it is the start of the month.
     
-    for t in transactions:
-        # Handling both object and dictionary formats safely
-        amt = t.amount if hasattr(t, 'amount') else t.get('amount', 0)
-        dt = _parsed_date(t)
+    Args:
+        transactions (List[Transaction]): List of transaction objects to analyze.
         
-        if dt and dt.month == today.month and amt < 0:
-            current_month_tx.append(abs(amt))
-    
-    total_spent = sum(current_month_tx)
-    days_passed = today.day
-    _, days_in_month = calendar.monthrange(today.year, today.month)
-    
-    if days_passed <= 0:
-        return {"current_total": total_spent, "burn_rate": 0, "forecasted_total": total_spent}
+    Returns:
+        dict: A dictionary containing 'burn_rate' and 'forecasted_total'.
+    """
+    # EDGE CASE HANDLING: If no transactions, return zeroed data
+    if not transactions:
+        return {"burn_rate": 0.0, "forecasted_total": 0.0}
 
-    daily_burn_rate = total_spent / days_passed
-    projected_total = daily_burn_rate * days_in_month
+    today = date.today()
+    days_in_month = calendar.monthrange(today.year, today.month)[1]
+    
+    # Calculate days passed (min 1 to avoid division by zero)
+    days_passed = max(1, today.day)
+    
+    # Only sum negative amounts (spending) for the current month
+    current_month_spending = sum(abs(t.amount) for t in transactions 
+                                if t.amount < 0 and _parsed_date(t) 
+                                and _parsed_date(t).month == today.month 
+                                and _parsed_date(t).year == today.year)
+    
+    burn_rate = current_month_spending / days_passed
+    forecasted_total = burn_rate * days_in_month
+    
+    return {
+        "burn_rate": burn_rate,
+        "forecasted_total": forecasted_total
+    }
 
-    return {"current_total": total_spent, "burn_rate": daily_burn_rate, "forecasted_total": projected_total}
+def detect_subscription_creep(transactions: List[Transaction], threshold: float = 0.20) -> dict:
+    """
+    Detects month-over-month increases in subscription spending (Case Study 3).
+    
+    Args:
+        transactions (List[Transaction]): List of transaction objects.
+        threshold (float): The percentage increase (0.20 = 20%) to trigger an alert.
+        
+    Returns:
+        dict: Results including detection status and percentage change.
+    """
+    if not transactions:
+        return {"detected": False, "pct": 0, "current": 0}

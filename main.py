@@ -100,8 +100,13 @@ def delete_transaction_interactive(transactions: List[Transaction]) -> None:
         print("  Invalid input.")
         return
 
-    removed = transactions.pop(idx)
-    print(f"  Deleted: {removed.date} | HK$ {abs(removed.amount):.2f} | {removed.category}")
+    removed = transactions[idx]
+    confirm = input(f"  Are you sure you want to delete this {removed.category} entry? (y/n): ").strip().lower()
+    if confirm == 'y':
+        transactions.pop(idx)
+        print(f"  Confirmed. Deleted: {removed.date} | HK$ {abs(removed.amount):.2f}")
+    else:
+        print("  Deletion cancelled.")
 
 
 def edit_transaction_interactive(transactions: List[Transaction]) -> None:

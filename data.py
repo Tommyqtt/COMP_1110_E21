@@ -349,4 +349,4 @@ def add_category(new_category: str) -> bool:
     return False
 
 def validate_category(category: str) -> bool:
-    return category.lower() in CATEGORIES
+    return bool(str(category or "").strip())

@@ -27,6 +27,7 @@ from stats import (
     by_category,
     by_period,
     forecast_period_total,
+    recommend_budget_caps,
     format_summary,
 )
 from alerts import compute_health_score, run_all_alerts
@@ -189,13 +190,34 @@ def view_transactions(
         print("  No transactions match.")
         return
 
-    print(f"\n  Found {len(filtered)} transaction(s):")
-    return sorted(filtered, key=lambda x: (x.date, x.amount))
+    filtered_sorted = sorted(filtered, key=lambda x: (x.date, x.amount))
+    print(f"\n  Found {len(filtered_sorted)} transaction(s):")
+    for t in filtered_sorted:
+        print(f"  {t.date} | HK$ {abs(t.amount):.2f} | {t.category} | {t.description}")
+
 
 def show_summaries(transactions: List[Transaction]) -> None:
     """Print summary statistics."""
     print("\n--- Summary ---")
     print(format_summary(transactions))
+
+
+def show_budget_recommendations(transactions: List[Transaction]) -> None:
+    """Print recommended budget caps based on spending history."""
+    print("\n--- Recommended Budget Caps ---")
+    if not transactions:
+        print("  No transactions recorded. Add expenses before requesting recommendations.")
+        return
+
+    recs = recommend_budget_caps(transactions, period="monthly", safety_factor=1.2)
+    if not recs:
+        print("  Not enough expense history to recommend budgets yet.")
+        return
+
+    sorted_recs = sorted(recs.items(), key=lambda x: x[1], reverse=True)
+    for category, amount in sorted_recs:
+        print(f"  {category}: HK$ {amount:.2f}")
+    print("  Use these suggestions as a monthly budget guide.")
 
 
 def _pct_rule_triplet(rule) -> Tuple[str, float, float]:
@@ -448,6 +470,7 @@ def menu() -> None:
         print("  h. Budget health score")
         print("  7. Configure budget rule (cap)")
         print("  8. Configure % threshold alert")
+        print("  r. Recommend budget caps")
         print("  c. Manage categories")
         print("  9. Load data")
         print("  s. Save data")
@@ -491,6 +514,8 @@ def menu() -> None:
             configure_budgets(rules)
         elif choice == "8":
             configure_pct_rules(settings)
+        elif choice == "r":
+            show_budget_recommendations(transactions)
         elif choice == "c":
             manage_categories()
         elif choice == "9":

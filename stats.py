@@ -76,6 +76,34 @@ def trend_last_n_days(transactions: List[Transaction], n: int) -> float:
     return total
 
 
+def recommend_budget_caps(
+    transactions: List[Transaction],
+    period: str = "monthly",
+    safety_factor: float = 1.2,
+) -> Dict[str, float]:
+    """Recommend budget caps based on category spending history.
+
+    Uses historical average spending for each category over the chosen
+    period, then applies a safety factor to suggest a practical threshold.
+    """
+    if not transactions:
+        return {}
+
+    recommendations: Dict[str, float] = {}
+    categories = {
+        t.category for t in transactions if t.amount < 0 and t.category
+    }
+    for category in categories:
+        cat_txns = [t for t in transactions if t.category == category and t.amount < 0]
+        totals = by_period(cat_txns, period)
+        if not totals:
+            continue
+        avg_spend = sum(totals.values()) / len(totals)
+        recommendations[category] = round(avg_spend * safety_factor, 2)
+
+    return recommendations
+
+
 def average_daily_spending(transactions: List[Transaction]) -> float:
     """Mean daily spend across active days (days with at least one expense)."""
     daily: Dict[str, float] = defaultdict(float)
@@ -211,6 +239,9 @@ def forecast_period_total(
 
 def format_summary(transactions: List[Transaction]) -> str:
     """Human-readable summary used by the CLI menu."""
+    if not transactions:
+        return "  No transactions."
+
     lines: List[str] = []
     total = total_spending(transactions)
     lines.append(f"  Total spending: HK$ {total:.2f}")
@@ -231,24 +262,21 @@ def format_summary(transactions: List[Transaction]) -> str:
     t30 = trend_last_n_days(transactions, 30)
     lines.append(f"  Last 7 days:  HK$ {t7:.2f}")
     lines.append(f"  Last 30 days: HK$ {t30:.2f}")
-    return "\n".join(lines) if lines else "  No transactions."
+    return "\n".join(lines)
 
 def get_category_totals(transactions: list) -> dict:
     """Dynamically calculates totals for all available categories."""
-    # Initialize the dictionary dynamically based on current categories
-    totals = {cat: 0.0 for cat in CATEGORIES} 
-    
+    totals = {cat: 0.0 for cat in CATEGORIES}
+
     for t in transactions:
-        cat = t.get('category', 'others')
-        amount = float(t.get('amount', 0))
-        
-        # If the user has a transaction from an old category that was deleted, 
-        # or we want to capture it anyway:
+        cat = getattr(t, "category", "others") or "others"
+        amount = float(getattr(t, "amount", 0.0))
+
         if cat not in totals:
-            totals[cat] = 0.0 
-            
+            totals[cat] = 0.0
+
         totals[cat] += amount
-        
+
     return totals
 
 def get_monthly_forecast(transactions: List[Transaction]) -> dict:

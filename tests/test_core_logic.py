@@ -37,6 +37,7 @@ from stats import (  # noqa: E402
     by_category,
     by_period,
     format_summary,
+    recommend_budget_caps,
     total_spending,
     trend_last_n_days,
 )
@@ -241,6 +242,20 @@ class TestStats(unittest.TestCase):
 
     def test_format_summary_empty(self) -> None:
         self.assertIn("No transactions", format_summary([]))
+
+    def test_recommend_budget_caps_empty(self) -> None:
+        self.assertEqual(recommend_budget_caps([], "monthly"), {})
+
+    def test_recommend_budget_caps_monthly(self) -> None:
+        txs = [
+            T("2026-01-01", -100, "food"),
+            T("2026-01-15", -120, "food"),
+            T("2026-01-10", -50, "transport"),
+            T("2026-02-05", -80, "transport"),
+        ]
+        recs = recommend_budget_caps(txs, "monthly", safety_factor=1.0)
+        self.assertEqual(recs["food"], 220.0)
+        self.assertEqual(recs["transport"], 65.0)
 
 
 class TestDataValidation(unittest.TestCase):

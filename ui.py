@@ -61,6 +61,7 @@ from stats import (
     by_category,
     by_period,
     forecast_period_total,
+    recommend_budget_caps,
     total_spending,
     trend_last_n_days,
 )
@@ -1188,6 +1189,36 @@ def _forecasts_section(parent: tk.Widget, state: dict) -> None:
         _forecast_row(inner, label, fc)
 
 
+def _recommend_budget_section(parent: tk.Widget, state: dict) -> None:
+    """Show recommended budget caps based on observed spending."""
+    txs = state["transactions"]
+    if not txs:
+        return
+
+    recommendations = recommend_budget_caps(txs, period="monthly", safety_factor=1.2)
+    if not recommendations:
+        return
+
+    _section_header(parent, "Recommended budgets")
+    card = tk.Frame(parent, bg=COLORS["surface"],
+                    highlightbackground=COLORS["border"], highlightthickness=1)
+    card.pack(fill="x", pady=(0, PAD_SM))
+    inner = tk.Frame(card, bg=COLORS["surface"], padx=PAD_LG, pady=PAD_MD)
+    inner.pack(fill="x")
+    tk.Label(inner,
+             text="Suggested monthly cap values are based on your average monthly spending "
+                  "with a 20% safety margin.",
+             bg=COLORS["surface"], fg=COLORS["text_muted"],
+             font=(FONT_FAMILY, FONT_SIZE - 1), wraplength=520,
+             justify="left").pack(anchor="w", pady=(0, PAD_SM))
+
+    for cat, amt in sorted(recommendations.items(), key=lambda x: x[1], reverse=True)[:6]:
+        tk.Label(inner,
+                 text=f"{cat.capitalize()}: HK$ {amt:,.2f}",
+                 bg=COLORS["surface"], fg=COLORS["text"],
+                 font=(FONT_FAMILY, FONT_SIZE), anchor="w").pack(fill="x")
+
+
 def _summary_alerts_block(parent: tk.Widget, state: dict) -> None:
     """Alerts only (banners). Stats are built separately below a 'Spending statistics' header."""
     gs = state.get("gui_settings") or load_gui_settings()
@@ -1297,6 +1328,7 @@ def _refresh_summary_dashboard(
     )
 
     _forecasts_section(content, state)
+    _recommend_budget_section(content, state)
 
     monthly = by_period(txs, "monthly")
     if monthly:

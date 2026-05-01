@@ -19,6 +19,7 @@ from data import (
     validate_amount,
     validate_category,
     validate_date,
+    validate_payment_method,
     load_categories,
     add_category,
     CATEGORIES,
@@ -168,9 +169,21 @@ def edit_transaction_interactive(transactions: List[Transaction]) -> None:
     if not desc:
         desc = t.description
 
+    while True:
+        payment_method = input(f"Payment method [current: {t.payment_method}, cash/octopus/payme/credit_card, Enter to keep]: ").strip().lower()
+        if not payment_method:
+            payment_method = t.payment_method
+            break
+        if validate_payment_method(payment_method):
+            break
+        print("  Invalid payment method. Choose cash, octopus, payme, or credit_card.")
+
     transactions[idx] = Transaction(
-        date=date_str, amount=-amt,
-        category=category, description=desc,
+        date=date_str,
+        amount=-amt,
+        category=category,
+        description=desc,
+        payment_method=payment_method,
     )
     print("  Transaction updated.")
 
@@ -179,22 +192,25 @@ def view_transactions(
     transactions: List[Transaction],
     filter_date: str = None,
     filter_category: str = None,
+    filter_payment_method: str = None,
 ) -> None:
-    """Display transactions, optionally filtered by date or category."""
+    """Display transactions, optionally filtered by date, category, or payment method."""
     filtered = transactions
     if filter_date:
         filtered = [t for t in filtered if t.date == filter_date]
     if filter_category:
         filtered = [t for t in filtered if t.category == filter_category.lower()]
+    if filter_payment_method:
+        filtered = [t for t in filtered if t.payment_method == filter_payment_method.lower()]
 
     if not filtered:
         print("  No transactions match.")
         return
 
-    filtered_sorted = sorted(filtered, key=lambda x: (x.date, x.amount))
+    filtered_sorted = sorted(filtered, key=lambda x: (x.date, x.payment_method, x.amount))
     print(f"\n  Found {len(filtered_sorted)} transaction(s):")
     for t in filtered_sorted:
-        print(f"  {t.date} | HK$ {abs(t.amount):.2f} | {t.category} | {t.description}")
+        print(f"  {t.date} | HK$ {abs(t.amount):.2f} | {t.category} | {t.payment_method} | {t.description}")
 
 
 def show_summaries(transactions: List[Transaction]) -> None:
@@ -463,6 +479,7 @@ def menu() -> None:
         print("  2. View all transactions")
         print("  3. View by date")
         print("  4. View by category")
+        print("  pm. View by payment method")
         print("  d. Delete a transaction")
         print("  m. Edit a transaction")
         print("  5. Summaries")
@@ -499,9 +516,15 @@ def menu() -> None:
             c = input("  Category: ").strip()
             if c:
                 view_transactions(transactions, filter_category=c)
-        elif choice == "d":
+        elif choice in ("pm", "payment", "method"):
+            method = input("  Payment method (cash/octopus/payme/credit_card): ").strip().lower()
+            if not validate_payment_method(method):
+                print("  Invalid payment method.")
+            else:
+                view_transactions(transactions, filter_payment_method=method)
+        elif choice in ("d", "delete"):
             delete_transaction_interactive(transactions)
-        elif choice == "m":
+        elif choice in ("m", "edit"):
             edit_transaction_interactive(transactions)
         elif choice == "5":
             show_summaries(transactions)

@@ -44,6 +44,7 @@ from data import (
     BudgetRule,
     DEFAULT_CATEGORIES,
     CATEGORIES,
+    PAYMENT_METHODS,
     Transaction,
     load_budget_rules,
     load_transactions,
@@ -52,13 +53,17 @@ from data import (
     validate_amount,
     validate_category,
     validate_date,
+    validate_payment_method,
     load_categories,
     add_category,
+    load_payment_methods,
+    add_payment_method,
 )
 from stats import (
     average_daily_spending,
     budget_utilization,
     by_category,
+    by_payment_method,
     by_period,
     forecast_period_total,
     recommend_budget_caps,
@@ -184,6 +189,56 @@ def show_date_picker(parent: tk.Widget, target_var: tk.StringVar) -> None:
     win.protocol("WM_DELETE_WINDOW", cancel)
 
 
+def add_payment_method_dialog(parent_combo: ttk.Combobox) -> None:
+    """Dialog to add a new payment method."""
+    dlg = tk.Toplevel()
+    dlg.title("Add Payment Method")
+    dlg.resizable(False, False)
+    dlg.configure(bg=COLORS["bg"])
+    top = parent_combo.winfo_toplevel()
+    dlg.transient(top)
+    dlg.grab_set()
+
+    wrap = tk.Frame(dlg, bg=COLORS["bg"], padx=PAD_MD, pady=PAD_MD)
+    wrap.pack(fill="both", expand=True)
+    tk.Label(wrap, text="Add new payment method", bg=COLORS["bg"], fg=COLORS["text"], font=FONT_SECTION).pack(anchor="w", pady=(0, PAD_MD))
+
+    card_outer, card = _surface_card_with_accent(wrap)
+    card_outer.pack(fill="both", expand=True)
+
+    _field_label(card, "Payment method name")
+    new_method_var = tk.StringVar()
+    ttk.Entry(card, textvariable=new_method_var, width=30).pack(anchor="w", pady=(0, PAD_LG))
+
+    msg = tk.Label(card, text="", bg=COLORS["surface"], fg=COLORS["error"], font=(FONT_FAMILY, FONT_SIZE))
+
+    def close():
+        dlg.grab_release()
+        dlg.destroy()
+
+    def save():
+        new_method = new_method_var.get().strip().lower()
+        if not new_method:
+            msg.config(text="Enter a payment method name.", fg=COLORS["error"])
+            return
+        if new_method in PAYMENT_METHODS:
+            msg.config(text="Payment method already exists.", fg=COLORS["error"])
+            return
+        if add_payment_method(new_method):
+            parent_combo["values"] = list(PAYMENT_METHODS)
+            msg.config(text="Payment method added.", fg=COLORS["success"])
+            new_method_var.set("")
+        else:
+            msg.config(text="Failed to add payment method.", fg=COLORS["error"])
+
+    btn_row = tk.Frame(card, bg=COLORS["surface"])
+    btn_row.pack(fill="x")
+    ttk.Button(btn_row, text="Add", command=save).pack(side="right", padx=(PAD_SM, 0))
+    ttk.Button(btn_row, text="Close", command=close).pack(side="right")
+    msg.pack(anchor="w", pady=(PAD_SM, 0))
+    dlg.protocol("WM_DELETE_WINDOW", close)
+
+
 def setup_styles(root: tk.Tk) -> ttk.Style:
     """Configure ttk styles for coherent look."""
     style = ttk.Style(root)
@@ -207,6 +262,7 @@ def run_gui(transactions_path: str | None = None,
             budgets_path: str | None = None) -> None:
     """Launch the Tkinter GUI."""
     load_categories()  # Load custom categories at startup
+    load_payment_methods()  # Load custom payment methods at startup
     _tx_path = transactions_path or TRANSACTIONS_FILE
     _bd_path = budgets_path or BUDGETS_FILE
 
@@ -1331,6 +1387,13 @@ def _refresh_summary_dashboard(
         pct = (amt / total * 100.0) if total else 0.0
         _category_row(content, cat, amt, pct)
 
+    payment_totals = by_payment_method(txs)
+    if payment_totals:
+        _section_header(content, "Spending by payment method")
+        for method, amt in sorted(payment_totals.items(), key=lambda x: x[1], reverse=True):
+            pct = (amt / total * 100.0) if total else 0.0
+            _category_row(content, method, amt, pct)
+
     _section_header(content, "Momentum")
     denom = total if total > 0 else 1e-12
     pct7 = (t7 / denom) * 100.0
@@ -1460,6 +1523,14 @@ def create_add_tab(parent: ttk.Notebook, state: dict, save_data: Callable, reloa
     cat_combo = ttk.Combobox(card, textvariable=cat_var, values=CATEGORIES, width=20)
     cat_combo.pack(anchor="w", pady=(0, PAD_MD))
 
+    _field_label(card, "Payment method")
+    method_var = tk.StringVar(value=PAYMENT_METHODS[0])
+    method_row = tk.Frame(card, bg=COLORS["surface"])
+    method_row.pack(anchor="w", pady=(0, PAD_MD))
+    method_combo = ttk.Combobox(method_row, textvariable=method_var, values=list(PAYMENT_METHODS), width=17)
+    method_combo.pack(side="left")
+    ttk.Button(method_row, text="+", width=3, command=lambda: add_payment_method_dialog(method_combo)).pack(side="left", padx=(PAD_SM, 0))
+
     _field_label(card, "Description (optional)")
     desc_entry = ttk.Entry(card, width=40)
     desc_entry.pack(anchor="w", pady=(0, PAD_LG))
@@ -1482,11 +1553,16 @@ def create_add_tab(parent: ttk.Notebook, state: dict, save_data: Callable, reloa
         if not validate_category(category):
             msg_label.config(text="Invalid category.", fg=COLORS["error"])
             return
+        payment_method = method_var.get().strip().lower()
+        if not validate_payment_method(payment_method):
+            msg_label.config(text="Select a valid payment method.", fg=COLORS["error"])
+            return
         state["transactions"].append(Transaction(
             date=date_str,
             amount=-amt,
             category=category,
-            description=desc_entry.get().strip() or ""
+            description=desc_entry.get().strip() or "",
+            payment_method=payment_method,
         ))
         save_data()
         date_var.set(datetime.now().strftime("%Y-%m-%d"))
@@ -1517,6 +1593,7 @@ def create_transactions_tab(
 
     date_filter_var = tk.StringVar()
     cat_filter_var = tk.StringVar()
+    method_filter_var = tk.StringVar()
     desc_filter_var = tk.StringVar()
 
     def category_choices() -> List[str]:
@@ -1535,6 +1612,9 @@ def create_transactions_tab(
     tk.Label(row1, text="Category", bg=COLORS["surface"], fg=COLORS["text_muted"], font=(FONT_FAMILY, FONT_SIZE - 1)).pack(side="left", padx=(0, PAD_SM))
     cat_filter = ttk.Combobox(row1, textvariable=cat_filter_var, values=category_choices(), width=14, state="normal")
     cat_filter.pack(side="left", padx=(0, PAD_MD))
+    tk.Label(row1, text="Method", bg=COLORS["surface"], fg=COLORS["text_muted"], font=(FONT_FAMILY, FONT_SIZE - 1)).pack(side="left", padx=(0, PAD_SM))
+    method_filter = ttk.Combobox(row1, textvariable=method_filter_var, values=[""] + list(PAYMENT_METHODS), width=12, state="normal")
+    method_filter.pack(side="left", padx=(0, PAD_MD))
 
     row2 = tk.Frame(filter_card, bg=COLORS["surface"])
     row2.pack(fill="x", pady=(PAD_SM, 0))
@@ -1550,16 +1630,18 @@ def create_transactions_tab(
     tree_outer, tree_host = _surface_card_with_accent(frame)
     tree_inner = tk.Frame(tree_host, bg=COLORS["surface"])
     tree_inner.pack(fill="both", expand=True)
-    columns = ("date", "amount", "category", "description")
+    columns = ("date", "amount", "category", "payment_method", "description")
     tree = ttk.Treeview(tree_inner, columns=columns, show="headings", height=12, selectmode="browse")
     tree.heading("date", text="Date")
     tree.heading("amount", text="Amount (HKD)")
     tree.heading("category", text="Category")
+    tree.heading("payment_method", text="Method")
     tree.heading("description", text="Description")
     tree.column("date", width=100, minwidth=80)
     tree.column("amount", width=90, minwidth=70)
     tree.column("category", width=100, minwidth=80)
-    tree.column("description", width=220, minwidth=100)
+    tree.column("payment_method", width=100, minwidth=80)
+    tree.column("description", width=180, minwidth=100)
     vsb = ttk.Scrollbar(tree_inner, orient="vertical", command=tree.yview)
     hsb = ttk.Scrollbar(tree_inner, orient="horizontal", command=tree.xview)
     tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
@@ -1599,6 +1681,7 @@ def create_transactions_tab(
 
     def apply_filters():
         cat_filter["values"] = category_choices()
+        method_filter["values"] = [""] + list(PAYMENT_METHODS)
         for item in tree.get_children():
             tree.delete(item)
         last_displayed.clear()
@@ -1610,11 +1693,19 @@ def create_transactions_tab(
             tx_list = [t for t in tx_list if t.date.startswith(date_prefix)]
         if cat_str:
             tx_list = [t for t in tx_list if t.category.startswith(cat_str)]
+        if method_filter_var.get().strip():
+            method_q = method_filter_var.get().strip().lower()
+            tx_list = [t for t in tx_list if t.payment_method.startswith(method_q)]
         if desc_q:
             tx_list = [t for t in tx_list if desc_q in (t.description or "").lower()]
         for i, t in enumerate(sorted(tx_list, key=lambda x: (x.date, x.amount))):
             last_displayed.append(t)
-            tree.insert("", "end", iid=str(i), values=(t.date, f"{abs(t.amount):.2f}", t.category, t.description))
+            tree.insert(
+                "",
+                "end",
+                iid=str(i),
+                values=(t.date, f"{abs(t.amount):.2f}", t.category, t.payment_method, t.description),
+            )
 
     def refresh():
         """Reload from disk and reapply filters."""
@@ -1635,7 +1726,9 @@ def create_transactions_tab(
     date_filter_var.trace_add("write", lambda *_: schedule_filter())
     desc_filter_var.trace_add("write", lambda *_: schedule_filter())
     cat_filter_var.trace_add("write", lambda *_: schedule_filter())
+    method_filter_var.trace_add("write", lambda *_: schedule_filter())
     cat_filter.bind("<<ComboboxSelected>>", lambda _e: apply_filters())
+    method_filter.bind("<<ComboboxSelected>>", lambda _e: apply_filters())
 
     def edit_selected():
         sel = tree.selection()
@@ -1684,6 +1777,14 @@ def create_transactions_tab(
         cat_edit = ttk.Combobox(card, textvariable=cat_edit_var, values=sorted(category_choices())[1:], width=20)
         cat_edit.pack(anchor="w", pady=(0, PAD_MD))
 
+        _field_label(card, "Payment method")
+        method_edit_var = tk.StringVar(value=t_orig.payment_method)
+        method_edit_row = tk.Frame(card, bg=COLORS["surface"])
+        method_edit_row.pack(anchor="w", pady=(0, PAD_MD))
+        method_edit = ttk.Combobox(method_edit_row, textvariable=method_edit_var, values=list(PAYMENT_METHODS), width=17)
+        method_edit.pack(side="left")
+        ttk.Button(method_edit_row, text="+", width=3, command=lambda: add_payment_method_dialog(method_edit)).pack(side="left", padx=(PAD_SM, 0))
+
         _field_label(card, "Description")
         desc_var = tk.StringVar(value=t_orig.description)
         ttk.Entry(card, textvariable=desc_var, width=40).pack(anchor="w", pady=(0, PAD_LG))
@@ -1710,11 +1811,16 @@ def create_transactions_tab(
             if not validate_category(category):
                 msg.config(text="Invalid category.")
                 return
+            payment_method = method_edit_var.get().strip().lower()
+            if not validate_payment_method(payment_method):
+                msg.config(text="Select a valid payment method.")
+                return
             state["transactions"][tx_index] = Transaction(
                 date=date_str,
                 amount=-amt,
                 category=category,
                 description=desc_var.get().strip() or "",
+                payment_method=payment_method,
             )
             save_data()
             close()
@@ -1727,12 +1833,39 @@ def create_transactions_tab(
         msg.pack(anchor="w", pady=(PAD_SM, 0))
         dlg.protocol("WM_DELETE_WINDOW", close)
 
+    def delete_selected():
+        sel = tree.selection()
+        if not sel:
+            return
+        try:
+            row_i = int(sel[0])
+        except (ValueError, IndexError):
+            return
+        if not (0 <= row_i < len(last_displayed)):
+            return
+        t_orig = last_displayed[row_i]
+        try:
+            tx_index = state["transactions"].index(t_orig)
+        except ValueError:
+            return
+
+        if not messagebox.askyesno(
+            title="Delete transaction",
+            message="Are you sure you want to delete the selected transaction?"
+        ):
+            return
+
+        del state["transactions"][tx_index]
+        save_data()
+        apply_filters()
+
     btn_row_outer = tk.Frame(frame)
     btn_row_outer.columnconfigure(0, weight=1)
     btn_row_outer.columnconfigure(1, weight=0)
     btn_row_outer.columnconfigure(2, weight=1)
     btn_row_tx = tk.Frame(btn_row_outer)
     ttk.Button(btn_row_tx, text="Refresh from file", command=refresh).pack(side="left", padx=(0, PAD_SM))
+    ttk.Button(btn_row_tx, text="Delete selected", command=delete_selected).pack(side="left", padx=(0, PAD_SM))
     ttk.Button(btn_row_tx, text="Edit selected", command=edit_selected).pack(side="left")
     btn_row_tx.grid(row=0, column=1)
     # Same pack pattern as Summary: pin footer with side=bottom, header with side=top, list expands in middle.

@@ -26,6 +26,15 @@ def by_category(transactions: List[Transaction]) -> Dict[str, float]:
     return dict(totals)
 
 
+def by_payment_method(transactions: List[Transaction]) -> Dict[str, float]:
+    """Spending totals keyed by payment method."""
+    totals: Dict[str, float] = defaultdict(float)
+    for t in transactions:
+        if t.amount < 0:
+            totals[t.payment_method] += abs(t.amount)
+    return dict(totals)
+
+
 def by_period(transactions: List[Transaction], period: str) -> Dict[str, float]:
     """Spending totals keyed by period. Period is 'daily', 'weekly' or 'monthly'."""
     totals: Dict[str, float] = defaultdict(float)
@@ -250,6 +259,11 @@ def format_summary(transactions: List[Transaction]) -> str:
         lines.append("  By category:")
         for cat, amt in sorted(cat_totals.items(), key=lambda x: x[1], reverse=True):
             lines.append(f"    {cat}: HK$ {amt:.2f}")
+    pm_totals = by_payment_method(transactions)
+    if pm_totals:
+        lines.append("  By payment method:")
+        for method, amt in sorted(pm_totals.items(), key=lambda x: x[1], reverse=True):
+            lines.append(f"    {method}: HK$ {amt:.2f}")
     top = top_categories(transactions)
     if top:
         lines.append("  Top 3 categories:")

@@ -28,17 +28,22 @@ _SETTING_KEYS_IN_ORDER = (
 )
 
 
-@dataclass
+PAYMENT_METHODS = ("cash", "octopus", "payme", "credit_card")
 class Transaction:
     """A single spending transaction."""
     date: str       # YYYY-MM-DD
     amount: float   # Negative for expenses
     category: str
     description: str
+    payment_method: str = "cash"
 
     def __post_init__(self):
         if self.amount > 0:
             self.amount = -abs(self.amount)  # Expenses are negative
+        method = (self.payment_method or "cash").strip().lower()
+        if method not in PAYMENT_METHODS:
+            method = "cash"
+        self.payment_method = method
 
 
 @dataclass
@@ -63,7 +68,7 @@ def load_transactions(path: str) -> List[Transaction]:
     with open(p, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         if reader.fieldnames and "date" not in (reader.fieldnames or []):
-            print(f"  [Warn] Invalid CSV header in {path}. Expected: date,amount,category,description")
+            print(f"  [Warn] Invalid CSV header in {path}. Expected: date,amount,category,description[,payment_method]")
             return []
         for i, row in enumerate(reader):
             try:
@@ -71,8 +76,19 @@ def load_transactions(path: str) -> List[Transaction]:
                 amount = float(row.get("amount", 0))
                 category = (row.get("category") or "").strip().lower() or "other"
                 description = (row.get("description") or "").strip()
+                payment_method = (
+                    row.get("payment_method") or row.get("payment method") or row.get("method") or ""
+                ).strip().lower() or "cash"
+                if payment_method not in PAYMENT_METHODS:
+                    payment_method = "cash"
                 _validate_date(date_str)
-                transactions.append(Transaction(date=date_str, amount=amount, category=category, description=description))
+                transactions.append(Transaction(
+                    date=date_str,
+                    amount=amount,
+                    category=category,
+                    description=description,
+                    payment_method=payment_method,
+                ))
             except (ValueError, KeyError) as e:
                 print(f"  [Warn] Skipping malformed row {i + 2}: {e}")
     return transactions
@@ -83,10 +99,21 @@ def save_transactions(transactions: List[Transaction], path: str) -> None:
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
     with open(p, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=["date", "amount", "category", "description"])
+        writer = csv.DictWriter(
+            f,
+            fieldnames=["date", "amount", "category", "description", "payment_method"],
+        )
         writer.writeheader()
         for t in transactions:
-            writer.writerow({"date": t.date, "amount": t.amount, "category": t.category, "description": t.description})
+            writer.writerow(
+                {
+                    "date": t.date,
+                    "amount": t.amount,
+                    "category": t.category,
+                    "description": t.description,
+                    "payment_method": t.payment_method,
+                }
+            )
 
 
 def _lower_header_map(fieldnames: Optional[List[str]]) -> Dict[str, str]:
@@ -305,6 +332,11 @@ def validate_date(date_str: str) -> bool:
         return False
 
 
+def validate_payment_method(value: str) -> bool:
+    """Return True if the payment method is recognized."""
+    return bool(str(value or "").strip().lower() in PAYMENT_METHODS)
+
+
 def validate_amount(value: str) -> Optional[float]:
     """Parse and validate positive amount. Returns float or None if invalid."""
     try:
@@ -321,6 +353,40 @@ DEFAULT_CATEGORIES = ["food", "transport", "housing", "entertainment", "others"]
 CATEGORY_FILE = "categories.txt"
 
 CATEGORIES = []
+
+# Payment method management system
+DEFAULT_PAYMENT_METHODS = ("cash", "octopus", "payme", "credit_card")
+PAYMENT_METHODS_FILE = "payment_methods.txt"
+
+PAYMENT_METHODS = list(DEFAULT_PAYMENT_METHODS)
+
+
+def load_payment_methods():
+    global PAYMENT_METHODS
+    if os.path.exists(PAYMENT_METHODS_FILE):
+        with open(PAYMENT_METHODS_FILE, "r", encoding="utf-8") as f:
+            loaded = [line.strip() for line in f.readlines() if line.strip()]
+            PAYMENT_METHODS.clear()
+            PAYMENT_METHODS.extend(loaded)
+    else:
+        PAYMENT_METHODS.clear()
+        PAYMENT_METHODS.extend(DEFAULT_PAYMENT_METHODS)
+        save_payment_methods()
+
+
+def save_payment_methods():
+    with open(PAYMENT_METHODS_FILE, "w", encoding="utf-8") as f:
+        for method in PAYMENT_METHODS:
+            f.write(f"{method}\n")
+
+
+def add_payment_method(new_method: str) -> bool:
+    clean_method = new_method.strip().lower()
+    if clean_method and clean_method not in PAYMENT_METHODS:
+        PAYMENT_METHODS.append(clean_method)
+        save_payment_methods()
+        return True
+    return False
 
 
 def load_categories():

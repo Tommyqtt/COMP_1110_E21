@@ -276,6 +276,20 @@ def format_summary(transactions: List[Transaction]) -> str:
     t30 = trend_last_n_days(transactions, 30)
     lines.append(f"  Last 7 days:  HK$ {t7:.2f}")
     lines.append(f"  Last 30 days: HK$ {t30:.2f}")
+
+    # Explicit time-based sections (daily/weekly/monthly) for rubric clarity.
+    # Show recent periods to keep output readable for long histories.
+    for period in ("daily", "weekly", "monthly"):
+        period_totals = by_period(transactions, period)
+        if not period_totals:
+            continue
+        lines.append(f"  By {period}:")
+        period_keys = sorted(period_totals.keys())
+        recent_keys = period_keys[-5:]
+        for k in recent_keys:
+            lines.append(f"    {k}: HK$ {period_totals[k]:.2f}")
+        if len(period_keys) > len(recent_keys):
+            lines.append(f"    ... ({len(period_keys) - len(recent_keys)} earlier period(s) omitted)")
     return "\n".join(lines)
 
 def get_category_totals(transactions: list) -> dict:

@@ -133,6 +133,3 @@ Tokens and layout notes: [UI_DESIGN.md](UI_DESIGN.md).
 - Smarter auto-category from keywords.
 - Richer export (PDF / spreadsheet) from summary output.
 
-## License
-
-Educational use for COMP1110.

@@ -2,6 +2,7 @@
 Main CLI
 """
 
+import argparse
 import sys
 from typing import List, Tuple
 
@@ -543,5 +544,20 @@ def menu() -> None:
 
 
 if __name__ == "__main__":
-    from ui import run_gui
-    run_gui()
+    parser = argparse.ArgumentParser(description="Personal Budget Assistant")
+    parser.add_argument("--gui", action="store_true", help="Launch GUI (default)")
+    parser.add_argument("--cli", action="store_true", help="Run in CLI mode instead of GUI")
+    parser.add_argument("--transactions", default=None, help="Path to transactions CSV file")
+    parser.add_argument("--budgets", default=None, help="Path to budgets CSV file")
+    args = parser.parse_args()
+
+    if args.transactions:
+        TRANSACTIONS_FILE = args.transactions
+    if args.budgets:
+        BUDGETS_FILE = args.budgets
+
+    if args.cli:
+        menu()
+    else:
+        from ui import run_gui
+        run_gui(TRANSACTIONS_FILE, BUDGETS_FILE)

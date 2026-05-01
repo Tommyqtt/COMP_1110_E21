@@ -6,7 +6,7 @@ COMP1110 E21 - Topic A
 import calendar as cal_module
 import sys
 import tkinter as tk
-from tkinter import ttk
+from tkinter import filedialog, ttk
 from datetime import datetime
 from typing import Any, Callable, List, Optional, Tuple
 
@@ -203,9 +203,16 @@ def setup_styles(root: tk.Tk) -> ttk.Style:
     return style
 
 
-def run_gui() -> None:
+def run_gui(transactions_path: str | None = None,
+            budgets_path: str | None = None) -> None:
     """Launch the Tkinter GUI."""
     load_categories()  # Load custom categories at startup
+    _tx_path = transactions_path or TRANSACTIONS_FILE
+    _bd_path = budgets_path or BUDGETS_FILE
+
+    # Use a mutable wrapper so the "Load CSV" button can update the path
+    _active_tx_path: list[str] = [_tx_path]
+
     root = tk.Tk()
     root.title("Personal Budget Assistant")
     root.geometry("1100x760")
@@ -215,22 +222,22 @@ def run_gui() -> None:
 
     # Shared state
     state = {
-        "transactions": load_transactions(TRANSACTIONS_FILE),
-        "rules": load_budget_rules(BUDGETS_FILE),
+        "transactions": load_transactions(_active_tx_path[0]),
+        "rules": load_budget_rules(_bd_path),
         "gui_settings": load_gui_settings(),
     }
 
     def reload_data():
-        state["transactions"] = load_transactions(TRANSACTIONS_FILE)
-        state["rules"] = load_budget_rules(BUDGETS_FILE)
+        state["transactions"] = load_transactions(_active_tx_path[0])
+        state["rules"] = load_budget_rules(_bd_path)
         state["gui_settings"] = load_gui_settings()
 
     def save_data():
-        save_transactions(state["transactions"], TRANSACTIONS_FILE)
+        save_transactions(state["transactions"], _active_tx_path[0])
         merged = save_budgets_bundle(
             state["rules"],
             state.get("gui_settings") or load_gui_settings(),
-            BUDGETS_FILE,
+            _bd_path,
         )
         state["gui_settings"] = merged
 
@@ -239,7 +246,8 @@ def run_gui() -> None:
     header.pack(fill="x")
     title_frame = tk.Frame(root, bg=COLORS["bg"], padx=PAD_XL, pady=PAD_MD)
     title_frame.pack(fill="x")
-    tk.Label(title_frame, text="Personal Budget Assistant", font=FONT_HEADING, bg=COLORS["bg"], fg=COLORS["text"]).pack(anchor="w")
+    title_frame.columnconfigure(0, weight=1)
+    tk.Label(title_frame, text="Personal Budget Assistant", font=FONT_HEADING, bg=COLORS["bg"], fg=COLORS["text"]).grid(row=0, column=0, sticky="w")
 
     nb = ttk.Notebook(root)
     nb.pack(fill="both", expand=True, padx=PAD_XL, pady=(0, PAD_XL))
@@ -255,6 +263,22 @@ def run_gui() -> None:
     # Transactions tab
     tx_frame, refresh_transactions_view = create_transactions_tab(nb, state, reload_data, save_data)
     nb.add(tx_frame, text="Transactions")
+
+    def load_csv_file():
+        """Open a file dialog to load a different transactions CSV."""
+        path = filedialog.askopenfilename(
+            title="Select transactions CSV",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+        )
+        if not path:
+            return
+        txns = load_transactions(path)
+        state["transactions"] = txns
+        _active_tx_path[0] = path
+        refresh_transactions_view()
+        print(f"  Loaded {len(txns)} transactions from {path}")
+
+    ttk.Button(title_frame, text="Load CSV...", command=load_csv_file).grid(row=0, column=1, sticky="e")
 
     def on_notebook_tab_change(_event=None) -> None:
         try:

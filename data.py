@@ -28,7 +28,35 @@ _SETTING_KEYS_IN_ORDER = (
 )
 
 
-PAYMENT_METHODS = ("cash", "octopus", "payme", "credit_card")
+DEFAULT_PAYMENT_METHODS = ("cash", "octopus", "payme", "credit_card")
+PAYMENT_METHODS = list(DEFAULT_PAYMENT_METHODS)
+
+
+def _normalize_payment_method_token(value: str) -> str:
+    """Normalize payment-method text to a comparable token."""
+    return str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+
+
+def canonicalize_payment_method(value: str) -> str:
+    """
+    Return a canonical payment method.
+
+    Preserves unknown methods (lowercased) instead of coercing to "cash".
+    """
+    raw = str(value or "").strip().lower()
+    if not raw:
+        return "cash"
+
+    token = _normalize_payment_method_token(raw)
+    if token == "creditcard":
+        token = "credit_card"
+
+    for method in PAYMENT_METHODS:
+        if _normalize_payment_method_token(method) == token:
+            return str(method).strip().lower()
+
+    return raw
+@dataclass
 class Transaction:
     """A single spending transaction."""
     date: str       # YYYY-MM-DD
@@ -40,10 +68,7 @@ class Transaction:
     def __post_init__(self):
         if self.amount > 0:
             self.amount = -abs(self.amount)  # Expenses are negative
-        method = (self.payment_method or "cash").strip().lower()
-        if method not in PAYMENT_METHODS:
-            method = "cash"
-        self.payment_method = method
+        self.payment_method = canonicalize_payment_method(self.payment_method)
 
 
 @dataclass
@@ -65,6 +90,7 @@ def load_transactions(path: str) -> List[Transaction]:
         return []
 
     transactions = []
+    discovered_new_method = False
     with open(p, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         if reader.fieldnames and "date" not in (reader.fieldnames or []):
@@ -76,11 +102,13 @@ def load_transactions(path: str) -> List[Transaction]:
                 amount = float(row.get("amount", 0))
                 category = (row.get("category") or "").strip().lower() or "other"
                 description = (row.get("description") or "").strip()
-                payment_method = (
+                payment_method_raw = (
                     row.get("payment_method") or row.get("payment method") or row.get("method") or ""
                 ).strip().lower() or "cash"
+                payment_method = canonicalize_payment_method(payment_method_raw)
                 if payment_method not in PAYMENT_METHODS:
-                    payment_method = "cash"
+                    PAYMENT_METHODS.append(payment_method)
+                    discovered_new_method = True
                 _validate_date(date_str)
                 transactions.append(Transaction(
                     date=date_str,
@@ -91,6 +119,8 @@ def load_transactions(path: str) -> List[Transaction]:
                 ))
             except (ValueError, KeyError) as e:
                 print(f"  [Warn] Skipping malformed row {i + 2}: {e}")
+    if discovered_new_method:
+        save_payment_methods()
     return transactions
 
 
@@ -334,7 +364,7 @@ def validate_date(date_str: str) -> bool:
 
 def validate_payment_method(value: str) -> bool:
     """Return True if the payment method is recognized."""
-    return bool(str(value or "").strip().lower() in PAYMENT_METHODS)
+    return bool(canonicalize_payment_method(value) in PAYMENT_METHODS)
 
 
 def validate_amount(value: str) -> Optional[float]:
@@ -355,19 +385,24 @@ CATEGORY_FILE = "categories.txt"
 CATEGORIES = []
 
 # Payment method management system
-DEFAULT_PAYMENT_METHODS = ("cash", "octopus", "payme", "credit_card")
 PAYMENT_METHODS_FILE = "payment_methods.txt"
-
-PAYMENT_METHODS = list(DEFAULT_PAYMENT_METHODS)
 
 
 def load_payment_methods():
     global PAYMENT_METHODS
     if os.path.exists(PAYMENT_METHODS_FILE):
         with open(PAYMENT_METHODS_FILE, "r", encoding="utf-8") as f:
-            loaded = [line.strip() for line in f.readlines() if line.strip()]
+            loaded = [canonicalize_payment_method(line.strip()) for line in f.readlines() if line.strip()]
             PAYMENT_METHODS.clear()
-            PAYMENT_METHODS.extend(loaded)
+            seen = set()
+            for method in DEFAULT_PAYMENT_METHODS:
+                if method not in seen:
+                    PAYMENT_METHODS.append(method)
+                    seen.add(method)
+            for method in loaded:
+                if method and method not in seen:
+                    PAYMENT_METHODS.append(method)
+                    seen.add(method)
     else:
         PAYMENT_METHODS.clear()
         PAYMENT_METHODS.extend(DEFAULT_PAYMENT_METHODS)
@@ -381,7 +416,7 @@ def save_payment_methods():
 
 
 def add_payment_method(new_method: str) -> bool:
-    clean_method = new_method.strip().lower()
+    clean_method = canonicalize_payment_method(new_method)
     if clean_method and clean_method not in PAYMENT_METHODS:
         PAYMENT_METHODS.append(clean_method)
         save_payment_methods()

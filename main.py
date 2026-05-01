@@ -22,7 +22,10 @@ from data import (
     validate_payment_method,
     load_categories,
     add_category,
+    load_payment_methods,
+    add_payment_method,
     CATEGORIES,
+    PAYMENT_METHODS,
 )
 from stats import (
     budget_utilization,
@@ -456,12 +459,48 @@ def manage_categories() -> None:
         if again != "y":
             return
 
+
+def manage_payment_methods() -> None:
+    """Manage custom payment methods interactively."""
+    while True:
+        print("\n--- Manage Payment Methods ---")
+        print(f"Current payment methods ({len(PAYMENT_METHODS)}): {', '.join(PAYMENT_METHODS)}")
+        print("\nOptions:")
+        print("  1. Add a new payment method")
+        print("  2. View all payment methods")
+        print("  3. Back to menu")
+        
+        choice = input("Choice: ").strip().lower()
+        
+        if choice == "1":
+            new_method = input("  Enter new payment method name: ").strip().lower()
+            if new_method:
+                if add_payment_method(new_method):
+                    print(f"  ✓ Payment method '{new_method}' added successfully.")
+                else:
+                    print(f"  ✗ Payment method '{new_method}' already exists.")
+            else:
+                print("  ✗ Invalid payment method name.")
+        elif choice == "2":
+            print(f"\n  All payment methods ({len(PAYMENT_METHODS)}):")
+            for i, method in enumerate(PAYMENT_METHODS, 1):
+                print(f"    {i}. {method}")
+        elif choice == "3":
+            return
+        else:
+            print("  Unknown option. Please try again.")
+        
+        again = input("\n  Continue managing payment methods? (y/n): ").strip().lower()
+        if again != "y":
+            return
+
 # Main menu loop
 
 
 def menu() -> None:
     """Main menu loop."""
     load_categories()  # Load custom categories at startup
+    load_payment_methods()  # Load custom payment methods at startup
     transactions = load_transactions(TRANSACTIONS_FILE)
     rules, settings = load_budgets_bundle(BUDGETS_FILE)
 
@@ -490,6 +529,7 @@ def menu() -> None:
         print("  8. Configure % threshold alert")
         print("  r. Recommend budget caps")
         print("  c. Manage categories")
+        print("  y. Manage payment methods")
         print("  9. Load data")
         print("  s. Save data")
         print("  e. Export report to file")
@@ -517,7 +557,8 @@ def menu() -> None:
             if c:
                 view_transactions(transactions, filter_category=c)
         elif choice in ("pm", "payment", "method"):
-            method = input("  Payment method (cash/octopus/payme/credit_card): ").strip().lower()
+            print(f"  Available payment methods: {', '.join(PAYMENT_METHODS)}")
+            method = input("  Payment method: ").strip().lower()
             if not validate_payment_method(method):
                 print("  Invalid payment method.")
             else:
@@ -542,6 +583,8 @@ def menu() -> None:
             show_budget_recommendations(transactions)
         elif choice == "c":
             manage_categories()
+        elif choice == "y":
+            manage_payment_methods()
         elif choice == "9":
             transactions = load_transactions(TRANSACTIONS_FILE)
             rules, settings = load_budgets_bundle(BUDGETS_FILE)

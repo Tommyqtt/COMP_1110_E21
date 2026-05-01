@@ -991,6 +991,44 @@ def _category_row(
     ).pack(side="right")
 
 
+def _spending_breakdown_window(
+    parent: tk.Widget,
+    title: str,
+    totals: dict,
+    total_spending_value: float,
+    hide_zero_rows: bool = False,
+) -> None:
+    """Render a summary breakdown window using category-style bar rows."""
+    _section_header(parent, title)
+    card = tk.Frame(
+        parent,
+        bg=COLORS["surface"],
+        highlightbackground=COLORS["border"],
+        highlightthickness=1,
+        padx=PAD_LG,
+        pady=PAD_MD,
+    )
+    card.pack(fill="x", pady=(0, PAD_SM))
+
+    display_totals = totals
+    if hide_zero_rows:
+        display_totals = {name: amt for name, amt in totals.items() if amt > 0}
+
+    if not display_totals:
+        tk.Label(
+            card,
+            text="No spending to display yet.",
+            bg=COLORS["surface"],
+            fg=COLORS["text_muted"],
+            font=(FONT_FAMILY, FONT_SIZE),
+        ).pack(anchor="w")
+        return
+
+    for name, amt in sorted(display_totals.items(), key=lambda x: x[1], reverse=True):
+        pct = (amt / total_spending_value * 100.0) if total_spending_value else 0.0
+        _category_row(card, name, amt, pct)
+
+
 def _mini_stat_row(parent: tk.Widget, label: str, amount: float) -> None:
     row = tk.Frame(parent, bg=COLORS["accent_light"], padx=PAD_MD, pady=PAD_SM)
     row.pack(fill="x", pady=PAD_SM)
@@ -1380,19 +1418,29 @@ def _refresh_summary_dashboard(
     _kpi_card(hero, "Avg. per active day", _fmt_hk(avg_day), "Days with at least one expense").grid(row=0, column=1, sticky="nsew", padx=PAD_SM)
     _kpi_card(hero, "Last 7 days", _fmt_hk(t7), "Rolling window").grid(row=0, column=2, sticky="nsew", padx=(PAD_SM, 0))
 
-    _section_header(content, "Spending by category")
-
     cats = by_category(txs)
-    for cat, amt in sorted(cats.items(), key=lambda x: x[1], reverse=True):
-        pct = (amt / total * 100.0) if total else 0.0
-        _category_row(content, cat, amt, pct)
+    all_category_totals = {cat: 0.0 for cat in CATEGORIES}
+    for cat, amt in cats.items():
+        all_category_totals[cat] = all_category_totals.get(cat, 0.0) + amt
+    _spending_breakdown_window(
+        content,
+        "Spending by category",
+        all_category_totals,
+        total,
+        hide_zero_rows=True,
+    )
 
     payment_totals = by_payment_method(txs)
-    if payment_totals:
-        _section_header(content, "Spending by payment method")
-        for method, amt in sorted(payment_totals.items(), key=lambda x: x[1], reverse=True):
-            pct = (amt / total * 100.0) if total else 0.0
-            _category_row(content, method, amt, pct)
+    all_method_totals = {method: 0.0 for method in PAYMENT_METHODS}
+    for method, amt in payment_totals.items():
+        all_method_totals[method] = all_method_totals.get(method, 0.0) + amt
+    _spending_breakdown_window(
+        content,
+        "Spending by payment method",
+        all_method_totals,
+        total,
+        hide_zero_rows=True,
+    )
 
     _section_header(content, "Momentum")
     denom = total if total > 0 else 1e-12

@@ -1,0 +1,21 @@
+date,amount,category,description
+2026-03-05,-50.0,subscriptions,creep Mar A
+2026-03-25,-50.0,subscriptions,creep Mar B
+2026-04-01,-80.0,transport,monthly cap
+2026-04-03,-100.0,transport,monthly cap
+2026-04-05,-160.0,transport,monthly cap
+2026-04-10,-30.0,food,under
+2026-04-13,-60.0,food,streak
+2026-04-14,-55.0,food,streak
+2026-04-15,-45.0,food,reset
+2026-04-16,-62.0,food,streak x3
+2026-04-17,-52.5,food,streak
+2026-04-18,-85.0,food,streak + daily over
+2026-04-18,-5.5,food,same-day split
+2026-04-18,-12.0,other,uncat
+2026-04-18,-7.75,other,uncat
+2026-04-18,-4.25,other,uncat
+2026-04-02,-100.0,subscriptions,Apr creep
+2026-04-20,-65.0,subscriptions,Apr creep
+2026-04-21,-40.0,shopping,positive normalized
+2026-04-21,-88.12,shopping,decimals

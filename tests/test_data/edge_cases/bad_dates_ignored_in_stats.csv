@@ -1,0 +1,3 @@
+date,amount,category,description
+not-a-date,-10.0,food,skipped in by_period
+2026-07-15,-25.0,food,valid

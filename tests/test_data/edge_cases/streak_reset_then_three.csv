@@ -1,0 +1,6 @@
+date,amount,category,description
+2026-04-01,-60.0,food,over
+2026-04-02,-40.0,food,under cap — reset
+2026-04-03,-60.0,food,over
+2026-04-04,-60.0,food,over
+2026-04-05,-60.0,food,over

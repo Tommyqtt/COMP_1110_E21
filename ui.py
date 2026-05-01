@@ -70,7 +70,7 @@ from stats import (
     total_spending,
     trend_last_n_days,
 )
-from alerts import compute_health_score, run_all_alerts, split_alert_message
+from alerts import run_all_alerts, split_alert_message
 import portfolio
 from gui_settings import load_gui_settings, pct_rules_as_tuples
 
@@ -1196,65 +1196,6 @@ def _alert_type_banner(parent: tk.Widget, kind: str, body: str) -> None:
     ).pack(anchor="w", pady=(PAD_SM, 0))
 
 
-# Grade letter -> strip colour for the health hero card.
-_HEALTH_GRADE_COLORS = {
-    "A": "#059669",
-    "B": "#65a30d",
-    "C": "#ca8a04",
-    "D": "#ea580c",
-    "F": "#dc2626",
-}
-
-
-def _health_hero_card(parent: tk.Widget, state: dict) -> None:
-    """Prominent card with overall budget health score and letter grade."""
-    txs = state["transactions"]
-    rules = state["rules"]
-    if not txs:
-        return
-    h = compute_health_score(txs, rules)
-    grade = h["grade"]
-    strip_c = _HEALTH_GRADE_COLORS.get(grade, COLORS["accent"])
-
-    outer = tk.Frame(parent, bg=COLORS["bg"])
-    outer.pack(fill="x", pady=(0, PAD_MD))
-    card = tk.Frame(outer, bg=COLORS["surface"],
-                    highlightbackground=COLORS["border"], highlightthickness=1)
-    card.pack(fill="x")
-    strip = tk.Frame(card, bg=strip_c, width=6)
-    strip.pack(side="left", fill="y")
-    inner = tk.Frame(card, bg=COLORS["surface"], padx=PAD_LG, pady=PAD_LG)
-    inner.pack(side="left", fill="both", expand=True)
-
-    row = tk.Frame(inner, bg=COLORS["surface"])
-    row.pack(fill="x")
-
-    left = tk.Frame(row, bg=COLORS["surface"])
-    left.pack(side="left", fill="y")
-    tk.Label(left, text="BUDGET HEALTH", bg=COLORS["surface"], fg=strip_c,
-             font=(FONT_FAMILY, FONT_SIZE - 1, "bold")).pack(anchor="w")
-    score_row = tk.Frame(left, bg=COLORS["surface"])
-    score_row.pack(anchor="w", pady=(PAD_SM, 0))
-    tk.Label(score_row, text=f"{h['score']:.0f}", bg=COLORS["surface"],
-             fg=COLORS["text"], font=(FONT_FAMILY, 32, "bold")).pack(side="left")
-    tk.Label(score_row, text="/ 100", bg=COLORS["surface"], fg=COLORS["text_muted"],
-             font=(FONT_FAMILY, FONT_SIZE + 2)).pack(side="left", padx=(PAD_SM, 0))
-    tk.Label(left, text=f"Grade {grade}", bg=COLORS["surface"], fg=strip_c,
-             font=(FONT_FAMILY, FONT_SIZE + 1, "bold")).pack(anchor="w", pady=(PAD_SM, 0))
-
-    right = tk.Frame(row, bg=COLORS["surface"])
-    right.pack(side="right", fill="y")
-    tk.Label(right, text=f"Max cap utilised: {h['max_util']:.0f}%",
-             bg=COLORS["surface"], fg=COLORS["text"],
-             font=(FONT_FAMILY, FONT_SIZE)).pack(anchor="e")
-    tk.Label(right, text=f"Projected end-of-period: {h['max_forecast']:.0f}%",
-             bg=COLORS["surface"], fg=COLORS["text"],
-             font=(FONT_FAMILY, FONT_SIZE)).pack(anchor="e", pady=(PAD_SM, 0))
-    tk.Label(right, text=f"Transactions categorised: {h['categorized_pct']:.0f}%",
-             bg=COLORS["surface"], fg=COLORS["text"],
-             font=(FONT_FAMILY, FONT_SIZE)).pack(anchor="e", pady=(PAD_SM, 0))
-
-
 def _forecast_row(parent: tk.Widget, rule_label: str, fc: dict, bar_width: int = 200) -> None:
     """Single row showing projected spending vs cap as a coloured bar."""
     pct = fc["forecast_pct"]
@@ -1375,7 +1316,6 @@ def _refresh_summary_dashboard(
         w.destroy()
 
     _summary_alerts_block(content, state)
-    _health_hero_card(content, state)
     _section_header(content, "Spending statistics")
 
     txs = state["transactions"]

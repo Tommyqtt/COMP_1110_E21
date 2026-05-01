@@ -35,7 +35,7 @@ from stats import (
     recommend_budget_caps,
     format_summary,
 )
-from alerts import compute_health_score, run_all_alerts
+from alerts import run_all_alerts
 from gui_settings import pct_rules_as_tuples
 
 TRANSACTIONS_FILE = "transactions.csv"
@@ -291,19 +291,6 @@ def show_forecasts(
         )
 
 
-def show_health(
-    transactions: List[Transaction],
-    rules: List[BudgetRule],
-) -> None:
-    """Print the budget health score breakdown."""
-    print("\n--- Budget Health ---")
-    h = compute_health_score(transactions, rules)
-    print(f"  Score:               {h['score']:.0f}/100 (grade {h['grade']})")
-    print(f"  Max cap utilisation: {h['max_util']:.0f}%")
-    print(f"  Max projected end:   {h['max_forecast']:.0f}%")
-    print(f"  Categorised share:   {h['categorized_pct']:.0f}%")
-
-
 def configure_budgets(rules: List[BudgetRule]) -> None:
     """Add a budget rule interactively."""
     print("\n--- Configure Budget Rule ---")
@@ -368,7 +355,7 @@ def export_report(
     rules: List[BudgetRule],
     settings: dict,
 ) -> None:
-    """Write summaries, forecasts, health, and alerts to a plain-text file."""
+    """Write summaries, forecasts, and alerts to a plain-text file."""
     filename = input("  Output filename (e.g. report.txt): ").strip()
     if not filename:
         filename = "report.txt"
@@ -379,15 +366,6 @@ def export_report(
     lines.append("=" * 50)
     lines.append("")
     lines.append(format_summary(transactions))
-    lines.append("")
-
-    h = compute_health_score(transactions, rules)
-    lines.append("--- Budget Health ---")
-    lines.append(
-        f"  Score: {h['score']:.0f}/100 (grade {h['grade']});  "
-        f"max util {h['max_util']:.0f}%, projected {h['max_forecast']:.0f}%, "
-        f"categorised {h['categorized_pct']:.0f}%"
-    )
     lines.append("")
 
     lines.append("--- Forecasts ---")
@@ -524,7 +502,6 @@ def menu() -> None:
         print("  5. Summaries")
         print("  6. Alerts")
         print("  f. Forecasts (projected end-of-period)")
-        print("  h. Budget health score")
         print("  7. Configure budget rule (cap)")
         print("  8. Configure % threshold alert")
         print("  r. Recommend budget caps")
@@ -573,8 +550,6 @@ def menu() -> None:
             show_alerts(transactions, rules, settings)
         elif choice == "f":
             show_forecasts(transactions, rules)
-        elif choice == "h":
-            show_health(transactions, rules)
         elif choice == "7":
             configure_budgets(rules)
         elif choice == "8":

@@ -10,7 +10,6 @@ from typing import Any, Dict, List, Tuple
 from fpdf import FPDF
 
 from alerts import (
-    compute_health_score,
     run_all_alerts,
     split_alert_message,
 )
@@ -52,10 +51,6 @@ _ALERT_THEME = {
     "health":             {"strip": "#059669", "bg": "#ecfdf5", "title": "Budget health"},
     "general":            {"strip": "#0e7490", "bg": "#ecfeff", "title": "Notice"},
     "clear":              {"strip": "#059669", "bg": "#ecfdf5", "title": "All clear"},
-}
-_GRADE_COLORS = {
-    "A": "#059669", "B": "#65a30d", "C": "#ca8a04",
-    "D": "#ea580c", "F": "#dc2626",
 }
 _CATEGORY_BAR_COLORS = (
     "#0d9488", "#3b82f6", "#8b5cf6", "#f59e0b", "#ec4899",
@@ -175,66 +170,6 @@ def _alert_banner(pdf: FPDF, kind: str, body: str, x0: float = 0, w: float = 0) 
     _multi_cell(pdf, w - 4, 3.2, body)
 
     pdf.ln(1)
-
-
-def _health_hero(pdf: FPDF, state: dict, x0: float = 0, w: float = 0) -> None:
-    txs = state.get("transactions", [])
-    rules = state.get("rules", [])
-    if not txs:
-        return
-
-    x0 = x0 or _MARGIN
-    w = w or _CONTENT_W
-
-    h = compute_health_score(txs, rules)
-    grade = h["grade"]
-    strip_c = _hex_rgb(_GRADE_COLORS.get(grade, _COLORS["accent"]))
-
-    _section_header(pdf, "Budget Health")
-
-    y0 = pdf.get_y()
-    card_h = 22
-    # Surface card background
-    pdf.set_fill_color(*_hex_rgb(_COLORS["surface"]))
-    pdf.rect(x0, y0, w, card_h, "F")
-    # Border
-    pdf.set_draw_color(*_hex_rgb(_COLORS["border"]))
-    pdf.rect(x0, y0, w, card_h, "D")
-    # Grade strip
-    pdf.set_fill_color(*strip_c)
-    pdf.rect(x0, y0, 1.8, card_h, "F")
-
-    # Left column — score
-    pdf.set_xy(x0 + 4, y0 + 1)
-    pdf.set_font("Helvetica", "B", 6)
-    pdf.set_text_color(*strip_c)
-    _cell(pdf, 0, 3, "BUDGET HEALTH", new_x="LMARGIN", new_y="NEXT")
-
-    pdf.set_x(x0 + 4)
-    pdf.set_font("Helvetica", "B", 16)
-    pdf.set_text_color(*_hex_rgb(_COLORS["text"]))
-    _cell(pdf, 10, 6, f"{h['score']:.0f}")
-    pdf.set_font("Helvetica", "", 7)
-    pdf.set_text_color(*_hex_rgb(_COLORS["text_muted"]))
-    _cell(pdf, 0, 6, "/ 100", new_x="LMARGIN", new_y="NEXT")
-
-    pdf.set_x(x0 + 4)
-    pdf.set_font("Helvetica", "B", 8)
-    pdf.set_text_color(*strip_c)
-    _cell(pdf, 0, 4, f"Grade {grade}", new_x="LMARGIN", new_y="NEXT")
-
-    # Right column — stats
-    right_x = x0 + w - 48
-    pdf.set_xy(right_x, y0 + 2)
-    pdf.set_font("Helvetica", "", 7)
-    pdf.set_text_color(*_hex_rgb(_COLORS["text"]))
-    _cell(pdf, 0, 3.5, f"Max cap utilised: {h['max_util']:.0f}%", new_x="LMARGIN", new_y="NEXT")
-    pdf.set_xy(right_x, y0 + 7.5)
-    _cell(pdf, 0, 3.5, f"Projected end-of-period: {h['max_forecast']:.0f}%", new_x="LMARGIN", new_y="NEXT")
-    pdf.set_xy(right_x, y0 + 13)
-    _cell(pdf, 0, 3.5, f"Transactions categorised: {h['categorized_pct']:.0f}%", new_x="LMARGIN", new_y="NEXT")
-
-    pdf.set_y(y0 + card_h + 2)
 
 
 def _kpi_row(pdf: FPDF, cards: List[Tuple[str, str, str]]) -> None:
@@ -528,19 +463,12 @@ def export_summary_pdf(filepath: str, state: dict) -> str:
         ("Last 7 days", f"HK${kpi_t7:,.2f}", "Rolling window"),
     ])
 
-    # ── Two-column row: Budget Health | Alerts ──
-    col_w = _CONTENT_W / 2 - 2
-    y_row = pdf.get_y()
-    _health_hero(pdf, state, _MARGIN, col_w + 6)
-    y_left = pdf.get_y()
-
-    pdf.set_xy(_MARGIN + col_w + 8, y_row)
-    _alerts_block(pdf, state, _MARGIN + col_w + 8, col_w)
-    y_right = pdf.get_y()
-
-    pdf.set_y(max(y_left, y_right) + 1)
+    # ── Alerts (full width) ──
+    _alerts_block(pdf, state, _MARGIN, _CONTENT_W)
+    pdf.ln(1)
 
     # ── Two-column row: Spending by Category | Forecasts ──
+    col_w = _CONTENT_W / 2 - 2
     y_row = pdf.get_y()
     _category_bars(pdf, state, _MARGIN, col_w + 8)
     y_left = pdf.get_y()

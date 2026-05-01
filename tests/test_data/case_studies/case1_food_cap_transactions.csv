@@ -1,29 +1,35 @@
 date,amount,category,description,payment_method
-2026-03-01,-45,food,Lunch at cha chaan teng,Octopus
-2026-03-01,-12,transport,MTR Admiralty to HKU,Octopus
-2026-03-02,-38,food,Dinner at dai pai dong,Octopus
-2026-03-02,-22,food,Breakfast and bubble tea,WeChat Pay
-2026-03-03,-55,food,Group lunch at campus canteen,Octopus
-2026-03-03,-10,transport,Bus 23,Octopus
-2026-03-04,-62,food,Restaurant with friends,Credit Card
-2026-03-04,-15,transport,MTR,Octopus
-2026-03-05,-48,food,Lunch + afternoon snack,WeChat Pay
+2026-03-01,-28,food,Campus lunch set,Octopus
+2026-03-01,-14,food,Evening noodles,WeChat Pay
+2026-03-01,-12,transport,MTR to campus,Octopus
+2026-03-02,-36,food,Canteen lunch and fruit,Octopus
+2026-03-02,-10,transport,MTR home,Octopus
+2026-03-03,-32,food,Lunch with classmates,Octopus
+2026-03-03,-119,food,Bubble tea and takeaway dinner for project group,WeChat Pay
+2026-03-03,-10,transport,Bus transfer,Octopus
+2026-03-04,-64,food,Dinner at cha chaan teng with dessert,Credit Card
+2026-03-04,-87,food,Shared groceries and supper run,Octopus
+2026-03-04,-15,transport,MTR round trip,Octopus
+2026-03-05,-61,food,Meal prep groceries plus late dinner,Octopus
+2026-03-05,-90,food,Weekend bulk groceries top-up,Credit Card
 2026-03-05,-10,transport,MTR,Octopus
-2026-03-06,-40,food,Home-cooked groceries,Octopus
+2026-03-06,-34,food,Lunch and coffee,Octopus
 2026-03-06,-8,transport,Minibus,Octopus
-2026-03-07,-70,food,Family dinner out,Octopus
+2026-03-07,-47,food,Weekend brunch and snack,Alipay HK
 2026-03-07,-12,transport,MTR,Octopus
-2026-03-08,-35,food,Lunch at canteen,Octopus
+2026-03-08,-66,food,Family dinner gathering,Credit Card
 2026-03-08,-10,transport,MTR,Octopus
-2026-03-09,-52,food,Dim sum brunch,Alipay HK
-2026-03-09,-15,transport,Bus + MTR,Octopus
-2026-03-10,-47,food,Takeaway dinner,WeChat Pay
-2026-03-10,-12,transport,MTR,Octopus
-2026-03-11,-41,food,Lunch + coffee,Octopus
+2026-03-09,-37,food,Simple lunch + tea,Octopus
+2026-03-09,-12,transport,MTR,Octopus
+2026-03-10,-42,food,Takeaway dinner,WeChat Pay
+2026-03-10,-10,transport,MTR,Octopus
+2026-03-11,-33,food,Canteen lunch and drink,Octopus
 2026-03-11,-10,transport,MTR,Octopus
-2026-03-12,-68,food,Birthday dinner celebration,Octopus
-2026-03-12,-18,transport,Taxi,Alipay HK
-2026-03-13,-39,food,Lunch at canteen,Octopus
+2026-03-12,-34,food,Lunch combo,Octopus
+2026-03-12,-22,food,Late-night ramen with project group,Credit Card
+2026-03-12,-18,transport,Taxi after late study,Alipay HK
+2026-03-13,-39,food,Campus lunch,Octopus
 2026-03-13,-10,transport,MTR,Octopus
-2026-03-14,-50,food,Exactly at cap — lunch + snacks,WeChat Pay
+2026-03-14,-66,food,Weekend groceries and breakfast for hostel group,Octopus
+2026-03-14,-85,food,Dinner after study group meetup,Credit Card
 2026-03-14,-10,transport,MTR,Octopus

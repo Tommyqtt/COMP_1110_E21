@@ -2,6 +2,8 @@
 
 This document describes the 4 case studies used to evaluate the Personal Budget and Spending Assistant. Each case study has its own transaction file and budget rules file in `tests/test_data/case_studies/`.
 
+The scenarios are calibrated to the program's actual outputs: summary totals/trends (`format_summary`) and rule checks (`run_all_alerts`). Expected outputs below focus on the primary learning goal of each case; additional behavior alerts (for example anomaly spikes) can also appear when daily spend is unusually high.
+
 Each transaction file now includes a `payment_method` column reflecting how the bill was paid. The supported payment methods used across the case studies are:
 
 | Payment Method | Typical Use |
@@ -17,13 +19,13 @@ Each transaction file now includes a `payment_method` column reflecting how the 
 
 ## Case Study 1 — Daily Food Cap (`case1_food_cap_*`)
 
-**Scenario:** A university student tries to keep food spending under HK$50 per day across a two-week period. They commute daily by MTR and want to know which days they exceeded the food cap.
+**Scenario:** A university student tracks two weeks of normal campus life spending: weekday lunches, occasional takeaway, one family dinner, and one late-night project meal. They commute mostly by MTR with one taxi after studying late.
 
 **Goal:** Test the daily category cap alert and the consecutive overspend streak alert for the `food` category.
 
 **Sample budget rules:**
-- food: daily cap HK$50
-- transport: monthly cap HK$300
+- food: daily cap HK$150
+- transport: monthly cap HK$350
 
 **Payment methods in this case study:**
 - Most food: Octopus (canteen, dai pai dong, cha chaan teng, groceries)
@@ -34,11 +36,12 @@ Each transaction file now includes a `payment_method` column reflecting how the 
 - Taxi: Alipay HK
 
 **Expected outputs:**
-- OVERSPEND alerts on: 2026-03-03 (HK$55), 2026-03-04 (HK$62), 2026-03-07 (HK$70), 2026-03-09 (HK$52), 2026-03-12 (HK$68)
-- STREAK alert: food exceeded daily cap on multiple consecutive days (Mar 3–4, Mar 7)
-- No transport alert (monthly total ≈ HK$185 < HK$300)
+- OVERSPEND alert on latest day: 2026-03-14 (HK$151 > HK$150)
+- STREAK alert: food exceeded daily cap for 3 consecutive days (Mar 3–5)
+- No transport alert (monthly total ≈ HK$157 < HK$350)
+- Summary pattern: food dominates category share, with higher spending concentrated in specific weekly windows
 
-**Strengths demonstrated:** Clear overspend warnings; streak detection helps identify habitual patterns. Payment method breakdown shows most overspends happen at sit-down restaurants paid by Credit Card or Alipay HK.
+**Strengths demonstrated:** Clear overspend warnings; streak detection helps identify habitual patterns. Payment method breakdown also helps reveal how overspend days are distributed across everyday methods (Octopus, WeChat Pay, and Credit Card), not only one payment channel.
 
 **Limitations:** System cannot distinguish between one expensive meal vs. multiple smaller ones on the same day; manual entry means a forgotten transaction can make a day appear under budget.
 
@@ -47,12 +50,12 @@ Each transaction file now includes a `payment_method` column reflecting how the 
 
 ## Case Study 2 — Monthly Transport Tracking (`case2_transport_tracking_*`)
 
-**Scenario:** A student commuting from Tuen Mun to campus uses the MTR twice daily (5 days/week). They want to track whether their monthly transport spend stays under HK$300. One trip to the airport inflates costs in one week.
+**Scenario:** A student commuting from Tuen Mun to campus every day records a daily MTR return fare through the month. A one-off airport trip and one rainy-day taxi ride add realistic transport spikes.
 
 **Goal:** Test monthly category cap alert and the weekly/monthly breakdown in summaries.
 
 **Sample budget rules:**
-- transport: monthly cap HK$300
+- transport: monthly cap HK$730
 - food: monthly cap HK$600
 
 **Payment methods in this case study:**
@@ -61,10 +64,11 @@ Each transaction file now includes a `payment_method` column reflecting how the 
 - Canteen lunches: Octopus
 
 **Expected outputs:**
-- Monthly transport total ≈ HK$373 → OVERSPEND alert (exceeds HK$300)
-- Monthly food total ≈ HK$155 → no alert
-- Summary shows clear weekly breakdown of transport spend
-- Transport > food in % share → potential percentage threshold alert if configured (e.g. transport > 30%)
+- Monthly transport total ≈ HK$755 → OVERSPEND alert (slightly above HK$730)
+- Monthly food total ≈ HK$363 → no food cap alert (below HK$600)
+- Summary shows daily commute baseline with transport spikes around airport/taxi dates
+- Transport > food in % share → percentage threshold alert would fire if configured (e.g. transport > 30%)
+- Optional extra alert: anomaly detection may flag airport/taxi spike days
 
 **Strengths demonstrated:** Monthly period tracking catches cumulative transport creep; weekly breakdown helps pinpoint the expensive week (the airport trip week). Payment method data clearly separates routine Octopus commuting from the one-off Credit Card Airport Express purchase.
 
@@ -74,24 +78,24 @@ Each transaction file now includes a `payment_method` column reflecting how the 
 
 ## Case Study 3 — Subscription Creep Detection (`case3_subscription_creep_*`)
 
-**Scenario:** A student has multiple subscriptions (Netflix, Spotify, iCloud, ChatGPT Plus). Over 3 months, they add Adobe Creative Cloud in February, then YouTube Premium Family Plan and Duolingo Super in March. By March their monthly subscription cost has risen substantially.
+**Scenario:** A student keeps a steady subscription stack (Netflix, Spotify, iCloud, YouTube Premium) in January, adds Notion in February, then adds Adobe Creative Cloud and Duolingo Super in March. Regular food and transport transactions are also included so the file looks like a normal monthly ledger, not subscriptions-only data.
 
 **Goal:** Test the subscription creep alert (month-over-month increase > 20%) and the monthly summary breakdown.
 
 **Sample budget rules:**
-- subscriptions: monthly cap HK$300
+- subscriptions: monthly cap HK$350
 
 **Payment methods in this case study:**
-- Netflix, Spotify, iCloud, Adobe, YouTube Premium, ChatGPT Plus: Credit Card (all are recurring international charges)
-- Duolingo Super: PayPal (international app, does not support local HK payment options)
-- Bulk food / transport entries: Credit Card / Octopus respectively
+- Netflix, Spotify, iCloud, YouTube Premium, Notion, Adobe: Credit Card (recurring digital charges)
+- Duolingo Super: PayPal (international app purchase)
+- Regular food / transport entries: Credit Card or Octopus depending on merchant
 
 **Expected outputs:**
-- January subscriptions: HK$258
-- February subscriptions: HK$326 → OVERSPEND alert (> HK$300)
-- March subscriptions: HK$459 → OVERSPEND alert
+- January subscriptions: HK$230
+- February subscriptions: HK$252 (no overspend against HK$350 cap)
+- March subscriptions: HK$355 → OVERSPEND alert (> HK$350)
 - SUBSCRIPTION CREEP alert: March vs February is a ~41% increase
-- Summary shows subscriptions growing as top-3 category by March
+- Summary shows subscription growth while food/transport stay comparatively stable
 
 **Strengths demonstrated:** The subscription creep detector catches gradual spending growth that is easy to miss month-by-month. The monthly breakdown makes the trend visible. All subscriptions being Credit Card / PayPal makes this category easy to audit — no Octopus or cash involved.
 
@@ -101,14 +105,14 @@ Each transaction file now includes a `payment_method` column reflecting how the 
 
 ## Case Study 4 — Habitual Overspending & Uncategorized Transactions (`case4_habitual_overspend_*`)
 
-**Scenario:** A student has an inconsistent spending pattern. Food often exceeds the HK$50 daily cap, shopping spikes in certain weeks, and two transactions are logged as "other" (uncategorized) because the student forgot to categorize them.
+**Scenario:** A student has an inconsistent spending pattern. Food occasionally exceeds a higher HK$150 daily cap on heavy-spend days, shopping spikes in certain weeks, and two transactions are logged as "other" (uncategorized) because the student forgot to categorize them.
 
 **Goal:** Test consecutive overspend streak alert for food, weekly cap for shopping, percentage threshold alert, and the uncategorized transaction warning.
 
 **Sample budget rules:**
-- food: daily cap HK$50
-- shopping: weekly cap HK$200
-- transport: monthly cap HK$200
+- food: daily cap HK$150
+- shopping: weekly cap HK$240
+- transport: monthly cap HK$300
 
 **Suggested percentage alert to configure (via menu option 8):**
 - shopping > 25% of total spending
@@ -123,14 +127,15 @@ Each transaction file now includes a `payment_method` column reflecting how the 
 - Untracked "other" purchases: Cash (reflects the unrecorded / mystery nature of these entries)
 
 **Expected outputs:**
-- STREAK alert: food exceeded daily cap on 3+ consecutive days (Apr 1–3, Apr 9–10, etc.)
-- OVERSPEND alert: shopping weekly cap exceeded (Apr 10 week: HK$200+ in electronics alone)
+- STREAK alert: food exceeded daily cap on 3 consecutive days (Apr 1–3)
+- OVERSPEND alert: shopping weekly cap exceeded in the latest week (HK$245 > HK$240)
 - UNCATEGORIZED alert: 2 transactions are in the 'other' category (Apr 13, Apr 14)
 - If % alert configured: shopping share is very high in this data set
+- Optional extra alert: anomaly detection may flag a few large shopping/food days
 
 **Strengths demonstrated:** Multiple alert types fire simultaneously; the uncategorized warning prompts the user to review and fix their records; the streak alert makes habitual overspend visible. The Cash payment method on the two "other" entries reinforces why they are untracked — cash purchases are the hardest to account for.
 
-**Limitations:** "Other" transactions cannot be recategorized in-app currently (a future improvement would be an edit/re-categorize option). The system has no way to know that the HK$200 electronics purchase was a one-off gift rather than habitual shopping.
+**Limitations:** Although transactions can be edited and recategorized in-app, the system still relies on manual user updates to do so. It also has no way to know that the HK$200 electronics purchase was a one-off gift rather than habitual shopping.
 
 ---
 

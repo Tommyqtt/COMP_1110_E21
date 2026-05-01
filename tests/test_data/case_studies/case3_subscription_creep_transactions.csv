@@ -1,23 +1,29 @@
 date,amount,category,description,payment_method
 2026-01-05,-78,subscriptions,Netflix monthly,Credit Card
-2026-01-05,-45,subscriptions,Spotify monthly,Credit Card
-2026-01-10,-120,subscriptions,iCloud storage 200GB,Credit Card
-2026-01-15,-15,subscriptions,ChatGPT Plus,Credit Card
+2026-01-05,-48,subscriptions,Spotify monthly,Credit Card
+2026-01-10,-23,subscriptions,iCloud storage 200GB,Credit Card
+2026-01-15,-81,subscriptions,YouTube Premium family,Credit Card
 2026-02-05,-78,subscriptions,Netflix monthly,Credit Card
-2026-02-05,-45,subscriptions,Spotify monthly,Credit Card
-2026-02-10,-120,subscriptions,iCloud storage 200GB,Credit Card
-2026-02-15,-15,subscriptions,ChatGPT Plus,Credit Card
-2026-02-20,-68,subscriptions,Adobe Creative Cloud (new),Credit Card
+2026-02-05,-48,subscriptions,Spotify monthly,Credit Card
+2026-02-10,-23,subscriptions,iCloud storage 200GB,Credit Card
+2026-02-15,-81,subscriptions,YouTube Premium family,Credit Card
+2026-02-20,-22,subscriptions,Notion Plus (new),Credit Card
 2026-03-05,-78,subscriptions,Netflix monthly,Credit Card
-2026-03-05,-45,subscriptions,Spotify monthly,Credit Card
-2026-03-10,-120,subscriptions,iCloud storage 200GB,Credit Card
-2026-03-15,-15,subscriptions,ChatGPT Plus,Credit Card
-2026-03-18,-68,subscriptions,Adobe Creative Cloud,Credit Card
-2026-03-22,-98,subscriptions,YouTube Premium family plan (new),Credit Card
+2026-03-05,-48,subscriptions,Spotify monthly,Credit Card
+2026-03-10,-23,subscriptions,iCloud storage 200GB,Credit Card
+2026-03-15,-81,subscriptions,YouTube Premium family,Credit Card
+2026-03-18,-22,subscriptions,Notion Plus,Credit Card
+2026-03-22,-68,subscriptions,Adobe Creative Cloud (new),Credit Card
 2026-03-25,-35,subscriptions,Duolingo Super,PayPal
-2026-01-01,-400,food,January food spending,Credit Card
-2026-02-01,-420,food,February food spending,Credit Card
-2026-03-01,-430,food,March food spending,Credit Card
-2026-01-01,-200,transport,January transport,Octopus
-2026-02-01,-210,transport,February transport,Octopus
-2026-03-01,-220,transport,March transport,Octopus
+2026-01-07,-86,food,Weekly groceries Jan,Octopus
+2026-01-21,-94,food,Dining and snacks Jan,Credit Card
+2026-02-08,-88,food,Weekly groceries Feb,Octopus
+2026-02-20,-96,food,Dining and snacks Feb,Credit Card
+2026-03-09,-90,food,Weekly groceries Mar,Octopus
+2026-03-21,-102,food,Dining and snacks Mar,Credit Card
+2026-01-03,-62,transport,Monthly MTR top-up Jan,Octopus
+2026-01-18,-54,transport,Bus and minibus fares Jan,Octopus
+2026-02-04,-65,transport,Monthly MTR top-up Feb,Octopus
+2026-02-19,-58,transport,Bus and minibus fares Feb,Octopus
+2026-03-06,-68,transport,Monthly MTR top-up Mar,Octopus
+2026-03-23,-61,transport,Bus and minibus fares Mar,Octopus

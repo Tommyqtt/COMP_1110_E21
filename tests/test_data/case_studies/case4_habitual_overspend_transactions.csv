@@ -1,13 +1,13 @@
 date,amount,category,description,payment_method
-2026-04-01,-55,food,Lunch over cap,Octopus
+2026-04-01,-151,food,Lunch snacks and grocery top-up,Octopus
 2026-04-01,-30,shopping,Snacks at 7-Eleven,Octopus
-2026-04-02,-60,food,Dinner with friends,Octopus
+2026-04-02,-152,food,Dinner with friends and late supper,Octopus
 2026-04-02,-45,shopping,Stationery,Octopus
-2026-04-03,-65,food,Brunch + lunch,Alipay HK
+2026-04-03,-153,food,Brunch + lunch + groceries,Alipay HK
 2026-04-03,-80,shopping,Clothing at Uniqlo,Credit Card
 2026-04-04,-50,food,Campus canteen,Octopus
 2026-04-04,-20,shopping,Convenience store,Octopus
-2026-04-05,-70,food,Expensive restaurant,Credit Card
+2026-04-05,-151,food,Expensive restaurant and drinks,Credit Card
 2026-04-05,-150,shopping,Shoes,Credit Card
 2026-04-06,-40,food,Normal day,Octopus
 2026-04-06,-10,shopping,Small items,Octopus

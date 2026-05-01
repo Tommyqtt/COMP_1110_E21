@@ -1,4 +1,4 @@
 category,period,threshold,alert_type
-subscriptions,monthly,300,overspend
+subscriptions,monthly,350,overspend
 food,monthly,500,overspend
 transport,monthly,250,overspend

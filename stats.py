@@ -327,3 +327,120 @@ def detect_subscription_creep(transactions: List[Transaction], threshold: float 
     """
     if not transactions:
         return {"detected": False, "pct": 0, "current": 0}
+def predict_by_category(
+    transactions: List[Transaction],
+    year: Optional[int] = None,
+    month: Optional[int] = None,
+) -> Dict[str, float]:
+    """
+    Project month-end spending for each category based on current monthly velocity.
+    Uses linear extrapolation: projected = (spent_so_far / days_elapsed) * total_days_in_month.
+    Returns empty dict if transactions is empty or target month has no data.
+    """
+    if not transactions:
+        return {}
+
+    if year is None or month is None:
+        dates = [_parsed_date(t) for t in transactions]
+        dates = [d for d in dates if d is not None]
+        if not dates:
+            return {}
+        latest = max(dates)
+        year = latest.year
+        month = latest.month
+
+    total_days = calendar.monthrange(year, month)[1]
+    cat_spending: Dict[str, float] = {}
+    days_seen = set()
+
+    for t in transactions:
+        if t.amount >= 0:
+            continue
+        d = _parsed_date(t)
+        if d is None or d.year != year or d.month != month:
+            continue
+        days_seen.add(d.day)
+        cat_spending[t.category] = cat_spending.get(t.category, 0.0) + abs(t.amount)
+
+    if not days_seen:
+        return {}
+
+    days_elapsed = max(days_seen)
+    return {cat: round((spent / days_elapsed) * total_days, 2)
+            for cat, spent in cat_spending.items()}
+
+
+def days_until_cap(
+    transactions: List[Transaction],
+    rules: List[BudgetRule],
+) -> List[Tuple[str, str, float, Optional[int]]]:
+    """
+    For each daily budget rule, estimate how many days until the monthly
+    cap equivalent (threshold * 30) is exhausted at current average daily pace.
+    Returns list of (category, period, daily_cap, days_remaining).
+    days_remaining is None if no spending recorded, 0 if already exceeded.
+    """
+    if not transactions:
+        return []
+
+    results = []
+    for rule in [r for r in rules if r.period == "daily"]:
+        cat_txns = [t for t in transactions if t.category == rule.category and t.amount < 0]
+        if not cat_txns:
+            results.append((rule.category, rule.period, rule.threshold, None))
+            continue
+
+        daily_totals: Dict[str, float] = {}
+        for t in cat_txns:
+            daily_totals[t.date] = daily_totals.get(t.date, 0.0) + abs(t.amount)
+
+        avg_daily = sum(daily_totals.values()) / len(daily_totals)
+        if avg_daily == 0:
+            results.append((rule.category, rule.period, rule.threshold, None))
+            continue
+
+        monthly_equiv = rule.threshold * 30
+        total_spent = sum(abs(t.amount) for t in cat_txns)
+        remaining = monthly_equiv - total_spent
+
+        if remaining <= 0:
+            results.append((rule.category, rule.period, rule.threshold, 0))
+        else:
+            results.append((rule.category, rule.period, rule.threshold, int(remaining / avg_daily)))
+
+    return results
+
+
+def format_category_forecast(
+    transactions: List[Transaction],
+    year: Optional[int] = None,
+    month: Optional[int] = None,
+) -> str:
+    """Format per-category month-end projections for CLI display."""
+    projections = predict_by_category(transactions, year=year, month=month)
+    if not projections:
+        return "  No data available for category forecast."
+    lines = ["  Projected month-end spending by category:"]
+    for cat, amt in sorted(projections.items(), key=lambda x: x[1], reverse=True):
+        lines.append(f"    {cat:<18} HK$ {amt:>8.2f}  (projected)")
+    return "\n".join(lines)
+
+
+def format_days_until_cap(
+    transactions: List[Transaction],
+    rules: List[BudgetRule],
+) -> str:
+    """Format days-until-cap results for CLI display."""
+    results = days_until_cap(transactions, rules)
+    if not results:
+        return "  No daily budget rules configured."
+    lines = ["  Days until monthly cap equivalent is reached (at current pace):"]
+    for cat, period, cap, days in results:
+        if days is None:
+            msg = "No spending recorded."
+        elif days == 0:
+            msg = "Monthly equivalent ALREADY EXCEEDED."
+        else:
+            msg = f"{days} day(s) remaining before HK$ {cap * 30:.0f} monthly equivalent is reached."
+        lines.append(f"    {cat:<18} daily cap HK$ {cap:.2f} — {msg}")
+    return "\n".join(lines)

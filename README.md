@@ -13,12 +13,15 @@ python3 main.py --gui    # or -g
 
 Run from the repo root (same folder as `main.py`) so CSV paths resolve. **`budgets.csv`** lives next to `data.py` in the repo; CLI and GUI share that path. Design and alert behavior: [ARCHITECTURE.md](ARCHITECTURE.md).
 
+The GUI provides additional features including the ability to upload custom transaction CSV files and download summary reports as PDF files.
+
 ## Key features
 
 - **Spending summaries:** totals, category breakdown, rolling windows (`format_summary` in `stats.py`).
 - **Predictive helpers:** burn-rate / month forecast utilities in `stats.py` (used by alerts and tests).
 - **Subscription creep:** month-over-month recurring-cost checks (Case Study 3).
 - **Budget rules:** daily / weekly / monthly caps, % of spend thresholds, and overspend alerts (`budgets.csv` + `alerts.py`).
+- **File upload/download:** GUI supports uploading custom transaction CSV files and downloading summary reports as PDF.
 
 ## File formats
 
@@ -83,6 +86,17 @@ CASH,cash,1,0.001,0.001,0,Low risk
 | e | Export report |
 | p | Portfolio (if available) |
 | q | Quit |
+
+## GUI Features
+
+The graphical user interface provides an intuitive way to manage your budget and transactions:
+
+- **Upload Transactions:** Load custom CSV files containing your transaction data using the "Load CSV..." button.
+- **Download Reports:** Export summary dashboards as PDF files for offline viewing and sharing.
+- **Interactive Dashboard:** View spending summaries, alerts, and budget utilization with visual charts.
+- **Transaction Management:** Add, view, and manage transactions through tabbed interface.
+- **Budget Configuration:** Set and adjust budget rules and percentage alerts.
+- **Category Management:** Add and manage custom spending categories.
 
 ## Tests
 

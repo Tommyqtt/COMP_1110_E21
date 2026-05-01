@@ -98,6 +98,8 @@ This document describes the 4 case studies used to evaluate the Personal Budget 
 
 ## How to Run a Case Study
 
+### Manual Loading
+
 ```bash
 # Load the case study data files instead of the default CSV files
 # Example for Case Study 1:
@@ -105,6 +107,18 @@ python3 main.py
 # From the menu, choose option 9 (Load data)
 # Then manually point to the case study files, or edit the
 # TRANSACTIONS_FILE / BUDGETS_FILE constants in main.py to point to the case study paths.
+```
+
+### Synchronous Command-Line Execution
+
+For direct loading of case study files:
+
+```bash
+# CLI mode with specific files
+python3 main.py --cli --transactions tests/test_data/case_studies/case1_food_cap_transactions.csv --budgets tests/test_data/case_studies/case1_food_cap_budgets.csv
+
+# GUI mode with specific files
+python3 main.py --gui --transactions tests/test_data/case_studies/case1_food_cap_transactions.csv --budgets tests/test_data/case_studies/case1_food_cap_budgets.csv
 ```
 
 Alternatively, to run a quick case study from the command line using the test generator:

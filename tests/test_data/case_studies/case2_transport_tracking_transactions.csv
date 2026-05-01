@@ -1,36 +1,36 @@
-date,amount,category,description
-2026-03-02,-12,transport,MTR Tuen Mun to Central
-2026-03-02,-12,transport,MTR Central to Tuen Mun
-2026-03-03,-12,transport,MTR to campus
-2026-03-03,-12,transport,MTR home
-2026-03-04,-12,transport,MTR to campus
-2026-03-04,-12,transport,MTR home
-2026-03-05,-12,transport,MTR to campus
-2026-03-05,-12,transport,MTR home
-2026-03-06,-12,transport,MTR to campus
-2026-03-06,-12,transport,MTR home
-2026-03-09,-12,transport,MTR to campus
-2026-03-09,-12,transport,MTR home
-2026-03-10,-12,transport,MTR to campus
-2026-03-10,-12,transport,MTR home
-2026-03-11,-12,transport,MTR to campus
-2026-03-11,-12,transport,MTR home
-2026-03-12,-12,transport,MTR to campus
-2026-03-12,-12,transport,MTR home
-2026-03-13,-12,transport,MTR to campus
-2026-03-13,-12,transport,MTR home
-2026-03-14,-25,transport,Airport Express (day trip)
-2026-03-16,-12,transport,MTR to campus
-2026-03-16,-12,transport,MTR home
-2026-03-17,-12,transport,MTR to campus
-2026-03-17,-12,transport,MTR home
-2026-03-18,-12,transport,MTR to campus
-2026-03-18,-12,transport,MTR home
-2026-03-19,-12,transport,MTR to campus
-2026-03-19,-12,transport,MTR home
-2026-03-20,-12,transport,MTR to campus
-2026-03-20,-12,transport,MTR home
-2026-03-02,-38,food,Lunch
-2026-03-09,-40,food,Lunch
-2026-03-16,-35,food,Lunch
-2026-03-23,-42,food,Lunch
+date,amount,category,description,payment_method
+2026-03-02,-12,transport,MTR Tuen Mun to Central,Octopus
+2026-03-02,-12,transport,MTR Central to Tuen Mun,Octopus
+2026-03-03,-12,transport,MTR to campus,Octopus
+2026-03-03,-12,transport,MTR home,Octopus
+2026-03-04,-12,transport,MTR to campus,Octopus
+2026-03-04,-12,transport,MTR home,Octopus
+2026-03-05,-12,transport,MTR to campus,Octopus
+2026-03-05,-12,transport,MTR home,Octopus
+2026-03-06,-12,transport,MTR to campus,Octopus
+2026-03-06,-12,transport,MTR home,Octopus
+2026-03-09,-12,transport,MTR to campus,Octopus
+2026-03-09,-12,transport,MTR home,Octopus
+2026-03-10,-12,transport,MTR to campus,Octopus
+2026-03-10,-12,transport,MTR home,Octopus
+2026-03-11,-12,transport,MTR to campus,Octopus
+2026-03-11,-12,transport,MTR home,Octopus
+2026-03-12,-12,transport,MTR to campus,Octopus
+2026-03-12,-12,transport,MTR home,Octopus
+2026-03-13,-12,transport,MTR to campus,Octopus
+2026-03-13,-12,transport,MTR home,Octopus
+2026-03-14,-25,transport,Airport Express (day trip),Credit Card
+2026-03-16,-12,transport,MTR to campus,Octopus
+2026-03-16,-12,transport,MTR home,Octopus
+2026-03-17,-12,transport,MTR to campus,Octopus
+2026-03-17,-12,transport,MTR home,Octopus
+2026-03-18,-12,transport,MTR to campus,Octopus
+2026-03-18,-12,transport,MTR home,Octopus
+2026-03-19,-12,transport,MTR to campus,Octopus
+2026-03-19,-12,transport,MTR home,Octopus
+2026-03-20,-12,transport,MTR to campus,Octopus
+2026-03-20,-12,transport,MTR home,Octopus
+2026-03-02,-38,food,Lunch,Octopus
+2026-03-09,-40,food,Lunch,Octopus
+2026-03-16,-35,food,Lunch,Octopus
+2026-03-23,-42,food,Lunch,Octopus

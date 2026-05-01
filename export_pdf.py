@@ -100,13 +100,15 @@ def _cat_bar_color(name: str) -> str:
     return _CATEGORY_BAR_COLORS[h % len(_CATEGORY_BAR_COLORS)]
 
 
-def _section_header(pdf: FPDF, title: str) -> None:
+def _section_header(pdf: FPDF, title: str, w: float = 0) -> None:
     """Section header with teal underline accent."""
     pdf.set_font("Helvetica", "B", 11)
     pdf.set_text_color(*_hex_rgb(_COLORS["text"]))
-    _cell(pdf,0, 6, title, new_x="LMARGIN", new_y="NEXT")
+    _cell(pdf, 0 if w == 0 else w, 6, title, new_x="LMARGIN", new_y="NEXT")
     pdf.set_fill_color(*_hex_rgb(_COLORS["accent"]))
-    pdf.rect(_MARGIN, pdf.get_y(), _CONTENT_W, 0.6, "F")
+    if w == 0:
+        w = _CONTENT_W
+    pdf.rect(_MARGIN, pdf.get_y(), w, 0.6, "F")
     pdf.ln(3)
 
 
@@ -114,13 +116,16 @@ def _section_header(pdf: FPDF, title: str) -> None:
 # Section renderers (each draws its content and advances y)
 # ---------------------------------------------------------------------------
 
-def _alerts_block(pdf: FPDF, state: dict) -> None:
+def _alerts_block(pdf: FPDF, state: dict, x0: float = 0, w: float = 0) -> None:
     txs: List[Transaction] = state.get("transactions", [])
     rules: List[BudgetRule] = state.get("rules", [])
     gs = state.get("gui_settings") or load_gui_settings()
     pct_rules = pct_rules_as_tuples(gs)
     consec = int(gs.get("consecutive_overspend_days", 3))
     creep = float(gs.get("subscription_creep_threshold_pct", 20.0))
+
+    x0 = x0 or _MARGIN
+    w = w or _CONTENT_W
 
     messages = run_all_alerts(
         txs, rules,
@@ -130,51 +135,56 @@ def _alerts_block(pdf: FPDF, state: dict) -> None:
         include_health=False,
     )
 
-    _section_header(pdf, "Alerts")
+    _section_header(pdf, "Alerts", w)
 
     if not messages:
-        _alert_banner(pdf, "clear", "No budget or behaviour warnings right now.")
+        _alert_banner(pdf, "clear", "No budget or behaviour warnings right now.", x0, w)
         return
 
     for msg in messages:
         kind, body = split_alert_message(msg)
-        _alert_banner(pdf, kind, body or msg)
+        _alert_banner(pdf, kind, body or msg, x0, w)
 
 
-def _alert_banner(pdf: FPDF, kind: str, body: str) -> None:
+def _alert_banner(pdf: FPDF, kind: str, body: str, x0: float = 0, w: float = 0) -> None:
     theme = _ALERT_THEME.get(kind, _ALERT_THEME["general"])
+    x0 = x0 or _MARGIN
+    w = w or _CONTENT_W
     strip_c = _hex_rgb(theme["strip"])
     bg_c = _hex_rgb(theme["bg"])
     title = theme["title"]
 
     y0 = pdf.get_y()
     pdf.set_fill_color(*bg_c)
-    pdf.rect(_MARGIN, y0, _CONTENT_W, 0, "F")  # will expand via later fills
+    pdf.rect(x0, y0, w, 0, "F")
 
     # Strip
     pdf.set_fill_color(*strip_c)
-    pdf.rect(_MARGIN, y0, 1.5, 12, "F")
+    pdf.rect(x0, y0, 1.5, 10, "F")
 
     # Title
-    pdf.set_xy(_MARGIN + 3, y0 + 0.5)
+    pdf.set_xy(x0 + 3, y0 + 0.5)
     pdf.set_font("Helvetica", "B", 7)
     pdf.set_text_color(*strip_c)
-    _cell(pdf,0, 3.5, title.upper(), new_x="LMARGIN", new_y="NEXT")
+    _cell(pdf, 0, 3, title.upper(), new_x="LMARGIN", new_y="NEXT")
 
     # Body
-    pdf.set_x(_MARGIN + 3)
+    pdf.set_x(x0 + 3)
     pdf.set_font("Helvetica", "", 7.5)
     pdf.set_text_color(*_hex_rgb(_COLORS["text"]))
-    _multi_cell(pdf,_CONTENT_W - 4, 3.5, body)
+    _multi_cell(pdf, w - 4, 3.2, body)
 
     pdf.ln(1)
 
 
-def _health_hero(pdf: FPDF, state: dict) -> None:
+def _health_hero(pdf: FPDF, state: dict, x0: float = 0, w: float = 0) -> None:
     txs = state.get("transactions", [])
     rules = state.get("rules", [])
     if not txs:
         return
+
+    x0 = x0 or _MARGIN
+    w = w or _CONTENT_W
 
     h = compute_health_score(txs, rules)
     grade = h["grade"]
@@ -183,48 +193,48 @@ def _health_hero(pdf: FPDF, state: dict) -> None:
     _section_header(pdf, "Budget Health")
 
     y0 = pdf.get_y()
-    card_h = 26
+    card_h = 22
     # Surface card background
     pdf.set_fill_color(*_hex_rgb(_COLORS["surface"]))
-    pdf.rect(_MARGIN, y0, _CONTENT_W, card_h, "F")
+    pdf.rect(x0, y0, w, card_h, "F")
     # Border
     pdf.set_draw_color(*_hex_rgb(_COLORS["border"]))
-    pdf.rect(_MARGIN, y0, _CONTENT_W, card_h, "D")
+    pdf.rect(x0, y0, w, card_h, "D")
     # Grade strip
     pdf.set_fill_color(*strip_c)
-    pdf.rect(_MARGIN, y0, 1.8, card_h, "F")
+    pdf.rect(x0, y0, 1.8, card_h, "F")
 
     # Left column — score
-    pdf.set_xy(_MARGIN + 4, y0 + 1)
+    pdf.set_xy(x0 + 4, y0 + 1)
     pdf.set_font("Helvetica", "B", 6)
     pdf.set_text_color(*strip_c)
-    _cell(pdf,0, 3, "BUDGET HEALTH", new_x="LMARGIN", new_y="NEXT")
+    _cell(pdf, 0, 3, "BUDGET HEALTH", new_x="LMARGIN", new_y="NEXT")
 
-    pdf.set_x(_MARGIN + 4)
-    pdf.set_font("Helvetica", "B", 18)
+    pdf.set_x(x0 + 4)
+    pdf.set_font("Helvetica", "B", 16)
     pdf.set_text_color(*_hex_rgb(_COLORS["text"]))
-    _cell(pdf,12, 7, f"{h['score']:.0f}")
+    _cell(pdf, 10, 6, f"{h['score']:.0f}")
     pdf.set_font("Helvetica", "", 7)
     pdf.set_text_color(*_hex_rgb(_COLORS["text_muted"]))
-    _cell(pdf,0, 7, "/ 100", new_x="LMARGIN", new_y="NEXT")
+    _cell(pdf, 0, 6, "/ 100", new_x="LMARGIN", new_y="NEXT")
 
-    pdf.set_x(_MARGIN + 4)
+    pdf.set_x(x0 + 4)
     pdf.set_font("Helvetica", "B", 8)
     pdf.set_text_color(*strip_c)
-    _cell(pdf,0, 4, f"Grade {grade}", new_x="LMARGIN", new_y="NEXT")
+    _cell(pdf, 0, 4, f"Grade {grade}", new_x="LMARGIN", new_y="NEXT")
 
     # Right column — stats
-    right_x = _MARGIN + _CONTENT_W - 50
+    right_x = x0 + w - 48
     pdf.set_xy(right_x, y0 + 2)
-    pdf.set_font("Helvetica", "", 7.5)
+    pdf.set_font("Helvetica", "", 7)
     pdf.set_text_color(*_hex_rgb(_COLORS["text"]))
-    _cell(pdf,0, 3.5, f"Max cap utilised: {h['max_util']:.0f}%", new_x="LMARGIN", new_y="NEXT")
-    pdf.set_xy(right_x, y0 + 8)
-    _cell(pdf,0, 3.5, f"Projected end-of-period: {h['max_forecast']:.0f}%", new_x="LMARGIN", new_y="NEXT")
-    pdf.set_xy(right_x, y0 + 14)
-    _cell(pdf,0, 3.5, f"Transactions categorised: {h['categorized_pct']:.0f}%", new_x="LMARGIN", new_y="NEXT")
+    _cell(pdf, 0, 3.5, f"Max cap utilised: {h['max_util']:.0f}%", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_xy(right_x, y0 + 7.5)
+    _cell(pdf, 0, 3.5, f"Projected end-of-period: {h['max_forecast']:.0f}%", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_xy(right_x, y0 + 13)
+    _cell(pdf, 0, 3.5, f"Transactions categorised: {h['categorized_pct']:.0f}%", new_x="LMARGIN", new_y="NEXT")
 
-    pdf.set_y(y0 + card_h + 3)
+    pdf.set_y(y0 + card_h + 2)
 
 
 def _kpi_row(pdf: FPDF, cards: List[Tuple[str, str, str]]) -> None:
@@ -267,7 +277,7 @@ def _kpi_row(pdf: FPDF, cards: List[Tuple[str, str, str]]) -> None:
     pdf.set_y(pdf.get_y() + card_h + 2)
 
 
-def _category_bars(pdf: FPDF, state: dict) -> None:
+def _category_bars(pdf: FPDF, state: dict, x0: float = 0, w: float = 0) -> None:
     txs = state.get("transactions", [])
     if not txs:
         return
@@ -275,22 +285,24 @@ def _category_bars(pdf: FPDF, state: dict) -> None:
     if total == 0:
         return
     cats = by_category(txs)
+    x0 = x0 or _MARGIN
+    w = w or _CONTENT_W
 
-    _section_header(pdf, "Spending by Category")
+    _section_header(pdf, "Spending by Category", w)
 
-    bar_w = 80
+    bar_w = min(70, w - 50)
     for cat_name, amt in sorted(cats.items(), key=lambda x: x[1], reverse=True):
         pct = (amt / total) * 100.0
         y0 = pdf.get_y()
 
         # Category name
-        pdf.set_xy(_MARGIN, y0)
+        pdf.set_xy(x0, y0)
         pdf.set_font("Helvetica", "", 7.5)
         pdf.set_text_color(*_hex_rgb(_COLORS["text"]))
-        _cell(pdf,16, 4, cat_name.capitalize())
+        _cell(pdf, 14, 4, cat_name.capitalize())
 
         # Track
-        track_x = _MARGIN + 17
+        track_x = x0 + 15
         pdf.set_fill_color(*_hex_rgb(_COLORS["border"]))
         pdf.rect(track_x, y0 + 0.8, bar_w, 3, "D")
 
@@ -304,15 +316,15 @@ def _category_bars(pdf: FPDF, state: dict) -> None:
         pdf.set_xy(track_x + bar_w + 1.5, y0)
         pdf.set_font("Helvetica", "B", 7)
         pdf.set_text_color(*_hex_rgb(_COLORS["accent"]))
-        _cell(pdf,10, 4, f"{pct:.0f}%")
+        _cell(pdf, 8, 4, f"{pct:.0f}%")
 
         # HK$ amount
-        pdf.set_xy(track_x + bar_w + 12, y0)
+        pdf.set_xy(track_x + bar_w + 10, y0)
         pdf.set_font("Helvetica", "", 7)
         pdf.set_text_color(*_hex_rgb(_COLORS["text_muted"]))
-        _cell(pdf,0, 4, f"HK$ {amt:,.2f}")
+        _cell(pdf, 0, 4, f"HK$ {amt:,.2f}")
 
-        pdf.ln(4.5)
+        pdf.ln(4)
 
 
 def _momentum(pdf: FPDF, state: dict) -> None:
@@ -338,128 +350,126 @@ def _momentum(pdf: FPDF, state: dict) -> None:
     ])
 
 
-def _forecasts(pdf: FPDF, state: dict) -> None:
+def _forecasts(pdf: FPDF, state: dict, x0: float = 0, w: float = 0) -> None:
     txs = state.get("transactions", [])
     rules = state.get("rules", [])
     if not rules or not txs:
         return
+    x0 = x0 or _MARGIN
+    w = w or _CONTENT_W
 
-    _section_header(pdf, "Forecasts")
+    _section_header(pdf, "Forecasts", w)
 
     y0 = pdf.get_y()
     pdf.set_fill_color(*_hex_rgb(_COLORS["surface"]))
-    pdf.rect(_MARGIN, y0, _CONTENT_W, 0, "F")  # background surface card
+    pdf.rect(x0, y0, w, 0, "F")
 
-    pdf.set_xy(_MARGIN + 2, y0 + 1)
+    pdf.set_xy(x0 + 2, y0 + 1)
     pdf.set_font("Helvetica", "", 6.5)
     pdf.set_text_color(*_hex_rgb(_COLORS["text_muted"]))
-    _multi_cell(pdf,_CONTENT_W - 4, 2.8,
-                   "Projected end-of-period total at current pace. "
-                   "Green under cap, orange 90%+, red 110%+.")
+    _multi_cell(pdf, w - 4, 2.8,
+                   "Projected end-of-period total at current pace.")
 
-    pdf.set_y(y0 + 8)
-    bar_w = 70
+    pdf.set_y(y0 + 7)
+    bar_w = min(60, w - 60)
     for r in rules:
         fc = forecast_period_total(txs, r)
         pct = fc["forecast_pct"]
         y1 = pdf.get_y()
 
-        # Pick colour
         if pct >= 110:
-            fg = (220, 38, 38)   # red
+            fg = (220, 38, 38)
         elif pct >= 90:
-            fg = (234, 88, 12)   # orange
+            fg = (234, 88, 12)
         else:
-            fg = (5, 150, 105)   # green
+            fg = (5, 150, 105)
 
-        # Rule label
-        pdf.set_xy(_MARGIN + 2, y1)
+        pdf.set_xy(x0 + 2, y1)
         pdf.set_font("Helvetica", "", 7.5)
         pdf.set_text_color(*_hex_rgb(_COLORS["text"]))
         label = f"{r.category.capitalize()} ({r.period})"
-        _cell(pdf,28, 4, label)
+        _cell(pdf, 24, 4, label)
 
-        # Track
-        track_x = _MARGIN + 31
+        track_x = x0 + 27
         pdf.set_fill_color(*_hex_rgb(_COLORS["border"]))
-        pdf.rect(track_x, y1 + 0.5, bar_w, 3.5, "D")
+        pdf.rect(track_x, y1 + 0.5, bar_w, 3, "D")
 
-        # Fill
         display_pct = max(0.0, min(100.0, pct))
         fill_w = max(0.6, bar_w * (display_pct / 100.0))
         pdf.set_fill_color(*fg)
-        pdf.rect(track_x, y1 + 0.5, fill_w, 3.5, "F")
+        pdf.rect(track_x, y1 + 0.5, fill_w, 3, "F")
 
-        # Percentage
         pdf.set_xy(track_x + bar_w + 1.5, y1)
         pdf.set_font("Helvetica", "B", 7)
         pdf.set_text_color(*fg)
-        _cell(pdf,8, 4, f"{pct:.0f}%")
+        _cell(pdf, 8, 4, f"{pct:.0f}%")
 
-        # Detail
         detail = (f"HK$ {fc['forecast']:,.0f} of {fc['threshold']:,.0f}  "
                   f"(day {fc['days_elapsed']}/{fc['days_total']})")
         pdf.set_xy(track_x + bar_w + 10, y1)
         pdf.set_font("Helvetica", "", 6.5)
         pdf.set_text_color(*_hex_rgb(_COLORS["text_muted"]))
-        _cell(pdf,0, 4, detail)
+        _cell(pdf, 0, 4, detail)
 
-        pdf.ln(5)
+        pdf.ln(4.5)
 
-    pdf.ln(2)
+    pdf.ln(1)
 
 
-def _recommended_budgets(pdf: FPDF, state: dict) -> None:
+def _recommended_budgets(pdf: FPDF, state: dict, x0: float = 0, w: float = 0) -> None:
     txs = state.get("transactions", [])
     if not txs:
         return
     recommendations = recommend_budget_caps(txs, period="monthly", safety_factor=1.2)
     if not recommendations:
         return
+    x0 = x0 or _MARGIN
+    w = w or _CONTENT_W
 
-    _section_header(pdf, "Recommended Budgets")
+    _section_header(pdf, "Recommended Budgets", w)
 
     pdf.set_font("Helvetica", "", 6.5)
     pdf.set_text_color(*_hex_rgb(_COLORS["text_muted"]))
-    _multi_cell(pdf,_CONTENT_W, 2.8,
-                   "Suggested monthly cap values based on your average monthly spending "
-                   "with a 20% safety margin.")
-    pdf.ln(1.5)
+    _multi_cell(pdf, w, 2.8,
+                   "Suggested monthly caps with 20% safety margin.")
+    pdf.ln(1)
 
     pdf.set_font("Helvetica", "", 7.5)
     pdf.set_text_color(*_hex_rgb(_COLORS["text"]))
     for cat, amt in sorted(recommendations.items(), key=lambda x: x[1], reverse=True)[:6]:
-        _cell(pdf,0, 4.5, f"{cat.capitalize()}: HK$ {amt:,.2f}", new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(2)
+        _cell(pdf, 0, 4, f"{cat.capitalize()}: HK$ {amt:,.2f}", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(1)
 
 
-def _recent_months(pdf: FPDF, state: dict) -> None:
+def _recent_months(pdf: FPDF, state: dict, x0: float = 0, w: float = 0) -> None:
     txs = state.get("transactions", [])
     if not txs:
         return
     monthly = by_period(txs, "monthly")
     if not monthly:
         return
+    x0 = x0 or _MARGIN
+    w = w or _CONTENT_W
 
-    _section_header(pdf, "Recent Months")
+    _section_header(pdf, "Recent Months", w)
 
     for key in sorted(monthly.keys())[-3:]:
         y0 = pdf.get_y()
         pdf.set_fill_color(*_hex_rgb(_COLORS["accent_light"]))
-        pdf.rect(_MARGIN, y0, _CONTENT_W, 5.5, "F")
+        pdf.rect(x0, y0, w, 4.5, "F")
 
-        pdf.set_xy(_MARGIN + 3, y0 + 0.8)
+        pdf.set_xy(x0 + 2, y0 + 0.5)
         pdf.set_font("Helvetica", "", 7.5)
         pdf.set_text_color(*_hex_rgb(_COLORS["text"]))
-        _cell(pdf,_CONTENT_W * 0.5, 3.5, str(key))
+        _cell(pdf, w * 0.5, 3, str(key))
 
-        pdf.set_xy(_MARGIN + _CONTENT_W - 35, y0 + 0.8)
+        pdf.set_xy(x0 + w - 30, y0 + 0.5)
         pdf.set_font("Helvetica", "B", 7.5)
         pdf.set_text_color(*_hex_rgb(_COLORS["accent"]))
-        _cell(pdf,0, 3.5, f"HK$ {monthly[key]:,.2f}")
+        _cell(pdf, 0, 3, f"HK$ {monthly[key]:,.2f}")
 
-        pdf.ln(5.5)
-    pdf.ln(2)
+        pdf.ln(4.5)
+    pdf.ln(1)
 
 
 # ---------------------------------------------------------------------------
@@ -496,36 +506,64 @@ def export_summary_pdf(filepath: str, state: dict) -> str:
     # ── Title block ──
     pdf.set_font("Helvetica", "B", 16)
     pdf.set_text_color(*_hex_rgb(_COLORS["text"]))
-    _cell(pdf,0, 8, "Personal Budget Assistant — Summary Report",
+    _cell(pdf, 0, 8, "Personal Budget Assistant - Summary Report",
              new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("Helvetica", "", 7.5)
     pdf.set_text_color(*_hex_rgb(_COLORS["text_muted"]))
-    _cell(pdf,0, 4, f"Generated: {datetime.now():%Y-%m-%d %H:%M}",
+    _cell(pdf, 0, 4, f"Generated: {datetime.now():%Y-%m-%d %H:%M}",
              new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(2)
+    pdf.ln(1)
 
-    # ── KPI row (appears even when no transactions) ──
+    # ── KPI row (full width, 3 columns) ──
     txs: List[Transaction] = state.get("transactions", [])
     if txs:
-        total = total_spending(txs)
-        avg_day = average_daily_spending(txs)
-        t7 = trend_last_n_days(txs, 7)
+        kpi_total = total_spending(txs)
+        kpi_avg = average_daily_spending(txs)
+        kpi_t7 = trend_last_n_days(txs, 7)
     else:
-        total = avg_day = t7 = 0.0
+        kpi_total = kpi_avg = kpi_t7 = 0.0
     _kpi_row(pdf, [
-        ("Total spending", f"HK$ {total:,.2f}", f"{len(txs)} transactions"),
-        ("Avg. per active day", f"HK$ {avg_day:,.2f}", "Days with at least one expense"),
-        ("Last 7 days", f"HK$ {t7:,.2f}", "Rolling window"),
+        ("Total spending", f"HK${kpi_total:,.2f}", f"{len(txs)} transactions"),
+        ("Avg. per active day", f"HK${kpi_avg:,.2f}", "Days with at least one expense"),
+        ("Last 7 days", f"HK${kpi_t7:,.2f}", "Rolling window"),
     ])
 
-    # ── Sections ──
-    _alerts_block(pdf, state)
-    _health_hero(pdf, state)
-    _category_bars(pdf, state)
+    # ── Two-column row: Budget Health | Alerts ──
+    col_w = _CONTENT_W / 2 - 2
+    y_row = pdf.get_y()
+    _health_hero(pdf, state, _MARGIN, col_w + 6)
+    y_left = pdf.get_y()
+
+    pdf.set_xy(_MARGIN + col_w + 8, y_row)
+    _alerts_block(pdf, state, _MARGIN + col_w + 8, col_w)
+    y_right = pdf.get_y()
+
+    pdf.set_y(max(y_left, y_right) + 1)
+
+    # ── Two-column row: Spending by Category | Forecasts ──
+    y_row = pdf.get_y()
+    _category_bars(pdf, state, _MARGIN, col_w + 8)
+    y_left = pdf.get_y()
+
+    pdf.set_xy(_MARGIN + col_w + 10, y_row)
+    _forecasts(pdf, state, _MARGIN + col_w + 10, col_w - 2)
+    y_right = pdf.get_y()
+
+    pdf.set_y(max(y_left, y_right) + 1)
+
+    # ── Momentum (full width, 3 columns) ──
     _momentum(pdf, state)
-    _forecasts(pdf, state)
-    _recommended_budgets(pdf, state)
-    _recent_months(pdf, state)
+
+    # ── Two-column row: Recommended Budgets | Recent Months ──
+    y_row = pdf.get_y()
+    _recommended_budgets(pdf, state, _MARGIN, col_w + 8)
+    y_left = pdf.get_y()
+
+    pdf.set_xy(_MARGIN + col_w + 10, y_row)
+    _recent_months(pdf, state, _MARGIN + col_w + 10, col_w - 2)
+    y_right = pdf.get_y()
+
+    pdf.set_y(max(y_left, y_right) + 1)
 
     pdf.output(filepath)
     return filepath

@@ -86,39 +86,51 @@ def load_transactions(path: str) -> List[Transaction]:
     if not p.exists():
         print(f"  [Info] Transactions file not found. Using empty list.")
         return []
-    if p.stat().st_size == 0:
+    try:
+        if p.stat().st_size == 0:
+            print(f"  [Info] Transactions file is empty ({path}). Using empty list.")
+            return []
+    except OSError as e:
+        print(f"  [Warn] Could not inspect transactions file '{path}': {e}. Using empty list.")
         return []
 
     transactions = []
     discovered_new_method = False
-    with open(p, newline="", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        if reader.fieldnames and "date" not in (reader.fieldnames or []):
-            print(f"  [Warn] Invalid CSV header in {path}. Expected: date,amount,category,description[,payment_method]")
-            return []
-        for i, row in enumerate(reader):
-            try:
-                date_str = row.get("date", "").strip()
-                amount = float(row.get("amount", 0))
-                category = (row.get("category") or "").strip().lower() or "other"
-                description = (row.get("description") or "").strip()
-                payment_method_raw = (
-                    row.get("payment_method") or row.get("payment method") or row.get("method") or ""
-                ).strip().lower() or "cash"
-                payment_method = canonicalize_payment_method(payment_method_raw)
-                if payment_method not in PAYMENT_METHODS:
-                    PAYMENT_METHODS.append(payment_method)
-                    discovered_new_method = True
-                _validate_date(date_str)
-                transactions.append(Transaction(
-                    date=date_str,
-                    amount=amount,
-                    category=category,
-                    description=description,
-                    payment_method=payment_method,
-                ))
-            except (ValueError, KeyError) as e:
-                print(f"  [Warn] Skipping malformed row {i + 2}: {e}")
+    try:
+        with open(p, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            if not reader.fieldnames:
+                print(f"  [Warn] Transactions file '{path}' has no valid CSV header. Using empty list.")
+                return []
+            if "date" not in (reader.fieldnames or []):
+                print(f"  [Warn] Invalid CSV header in {path}. Expected: date,amount,category,description[,payment_method]")
+                return []
+            for i, row in enumerate(reader):
+                try:
+                    date_str = row.get("date", "").strip()
+                    amount = float(row.get("amount", 0))
+                    category = (row.get("category") or "").strip().lower() or "other"
+                    description = (row.get("description") or "").strip()
+                    payment_method_raw = (
+                        row.get("payment_method") or row.get("payment method") or row.get("method") or ""
+                    ).strip().lower() or "cash"
+                    payment_method = canonicalize_payment_method(payment_method_raw)
+                    if payment_method not in PAYMENT_METHODS:
+                        PAYMENT_METHODS.append(payment_method)
+                        discovered_new_method = True
+                    _validate_date(date_str)
+                    transactions.append(Transaction(
+                        date=date_str,
+                        amount=amount,
+                        category=category,
+                        description=description,
+                        payment_method=payment_method,
+                    ))
+                except (ValueError, KeyError) as e:
+                    print(f"  [Warn] Skipping malformed row {i + 2}: {e}")
+    except (OSError, UnicodeDecodeError, csv.Error) as e:
+        print(f"  [Warn] Could not read transactions from '{path}': {e}. Using empty list.")
+        return []
     if discovered_new_method:
         save_payment_methods()
     return transactions
@@ -256,14 +268,23 @@ def load_budgets_bundle(path: Optional[str] = None) -> Tuple[List[BudgetRule], D
         save_budgets_bundle([], gs, str(p))
         return [], gs
 
-    if p.stat().st_size == 0:
+    try:
+        if p.stat().st_size == 0:
+            print(f"  [Info] Budgets file is empty ({p}). Using defaults.")
+            return [], normalize_gui_settings({})
+    except OSError as e:
+        print(f"  [Warn] Could not inspect budgets file '{p}': {e}. Using defaults.")
         return [], normalize_gui_settings({})
 
-    with open(p, newline="", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        fieldnames = list(reader.fieldnames or [])
-        fns = {str(x).strip().lower() for x in fieldnames}
-        rows = list(reader)
+    try:
+        with open(p, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            fieldnames = list(reader.fieldnames or [])
+            fns = {str(x).strip().lower() for x in fieldnames}
+            rows = list(reader)
+    except (OSError, UnicodeDecodeError, csv.Error) as e:
+        print(f"  [Warn] Could not read budgets file '{p}': {e}. Using defaults.")
+        return [], normalize_gui_settings({})
 
     if not rows and "row_type" not in fns:
         return [], normalize_gui_settings({})
@@ -391,18 +412,24 @@ PAYMENT_METHODS_FILE = "payment_methods.txt"
 def load_payment_methods():
     global PAYMENT_METHODS
     if os.path.exists(PAYMENT_METHODS_FILE):
-        with open(PAYMENT_METHODS_FILE, "r", encoding="utf-8") as f:
-            loaded = [canonicalize_payment_method(line.strip()) for line in f.readlines() if line.strip()]
-            PAYMENT_METHODS.clear()
-            seen = set()
-            for method in DEFAULT_PAYMENT_METHODS:
-                if method not in seen:
-                    PAYMENT_METHODS.append(method)
-                    seen.add(method)
-            for method in loaded:
-                if method and method not in seen:
-                    PAYMENT_METHODS.append(method)
-                    seen.add(method)
+        try:
+            with open(PAYMENT_METHODS_FILE, "r", encoding="utf-8") as f:
+                loaded = [canonicalize_payment_method(line.strip()) for line in f.readlines() if line.strip()]
+        except (OSError, UnicodeDecodeError) as e:
+            print(f"  [Warn] Could not read '{PAYMENT_METHODS_FILE}': {e}. Using defaults.")
+            loaded = []
+        if not loaded:
+            print(f"  [Info] Payment methods file is empty or invalid. Using defaults.")
+        PAYMENT_METHODS.clear()
+        seen = set()
+        for method in DEFAULT_PAYMENT_METHODS:
+            if method not in seen:
+                PAYMENT_METHODS.append(method)
+                seen.add(method)
+        for method in loaded:
+            if method and method not in seen:
+                PAYMENT_METHODS.append(method)
+                seen.add(method)
     else:
         PAYMENT_METHODS.clear()
         PAYMENT_METHODS.extend(DEFAULT_PAYMENT_METHODS)
@@ -410,9 +437,12 @@ def load_payment_methods():
 
 
 def save_payment_methods():
-    with open(PAYMENT_METHODS_FILE, "w", encoding="utf-8") as f:
-        for method in PAYMENT_METHODS:
-            f.write(f"{method}\n")
+    try:
+        with open(PAYMENT_METHODS_FILE, "w", encoding="utf-8") as f:
+            for method in PAYMENT_METHODS:
+                f.write(f"{method}\n")
+    except OSError as e:
+        print(f"  [Warn] Could not save payment methods to '{PAYMENT_METHODS_FILE}': {e}")
 
 
 def add_payment_method(new_method: str) -> bool:
@@ -427,19 +457,29 @@ def add_payment_method(new_method: str) -> bool:
 def load_categories():
     global CATEGORIES
     if os.path.exists(CATEGORY_FILE):
-        with open(CATEGORY_FILE, "r", encoding="utf-8") as f:
-            loaded = [line.strip() for line in f.readlines() if line.strip()]
-            CATEGORIES.clear()
-            CATEGORIES.extend(loaded)
+        try:
+            with open(CATEGORY_FILE, "r", encoding="utf-8") as f:
+                loaded = [line.strip().lower() for line in f.readlines() if line.strip()]
+        except (OSError, UnicodeDecodeError) as e:
+            print(f"  [Warn] Could not read '{CATEGORY_FILE}': {e}. Using defaults.")
+            loaded = []
+        if not loaded:
+            print(f"  [Info] Categories file is empty or invalid. Using defaults.")
+            loaded = list(DEFAULT_CATEGORIES)
+        CATEGORIES.clear()
+        CATEGORIES.extend(loaded)
     else:
         CATEGORIES.clear()
         CATEGORIES.extend(DEFAULT_CATEGORIES)
         save_categories()
 
 def save_categories():
-    with open(CATEGORY_FILE, "w", encoding="utf-8") as f:
-        for cat in CATEGORIES:
-            f.write(f"{cat}\n")
+    try:
+        with open(CATEGORY_FILE, "w", encoding="utf-8") as f:
+            for cat in CATEGORIES:
+                f.write(f"{cat}\n")
+    except OSError as e:
+        print(f"  [Warn] Could not save categories to '{CATEGORY_FILE}': {e}")
 
 def add_category(new_category: str) -> bool:
     clean_cat = new_category.strip().lower()

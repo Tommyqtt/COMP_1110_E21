@@ -26,22 +26,39 @@ def load_assets(path: str) -> List[Dict]:
     """Load the mock asset universe from CSV; fall back to defaults."""
     p = Path(path)
     if not p.exists():
+        print(f"  [Info] Assets file not found ({path}). Using built-in default assets.")
+        return _default_assets()
+    try:
+        if p.stat().st_size == 0:
+            print(f"  [Info] Assets file is empty ({path}). Using built-in default assets.")
+            return _default_assets()
+    except OSError as e:
+        print(f"  [Warn] Could not inspect assets file '{path}': {e}. Using built-in default assets.")
         return _default_assets()
     assets: List[Dict] = []
-    with open(p, newline="", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            try:
-                assets.append({
-                    "asset_id": row.get("asset_id", ""),
-                    "asset_class": row.get("asset_class", "").lower(),
-                    "risk_level": int(row.get("risk_level", 1)),
-                    "mu_monthly": float(row.get("mu_monthly", 0)),
-                    "sigma_monthly": float(row.get("sigma_monthly", 0)),
-                    "fee_rate": float(row.get("fee_rate", 0)),
-                })
-            except (ValueError, KeyError):
-                continue
+    try:
+        with open(p, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            if not reader.fieldnames:
+                print(f"  [Warn] Assets CSV '{path}' has no valid header. Using built-in default assets.")
+                return _default_assets()
+            for i, row in enumerate(reader):
+                try:
+                    assets.append({
+                        "asset_id": row.get("asset_id", ""),
+                        "asset_class": row.get("asset_class", "").lower(),
+                        "risk_level": int(row.get("risk_level", 1)),
+                        "mu_monthly": float(row.get("mu_monthly", 0)),
+                        "sigma_monthly": float(row.get("sigma_monthly", 0)),
+                        "fee_rate": float(row.get("fee_rate", 0)),
+                    })
+                except (ValueError, KeyError, TypeError) as e:
+                    print(f"  [Warn] Skipping malformed asset row {i + 2}: {e}")
+    except (OSError, UnicodeDecodeError, csv.Error) as e:
+        print(f"  [Warn] Could not read assets file '{path}': {e}. Using built-in default assets.")
+        return _default_assets()
+    if not assets:
+        print(f"  [Info] No valid assets found in '{path}'. Using built-in default assets.")
     return assets if assets else _default_assets()
 
 

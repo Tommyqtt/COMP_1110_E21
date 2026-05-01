@@ -6,7 +6,7 @@ COMP1110 E21 - Topic A
 import calendar as cal_module
 import sys
 import tkinter as tk
-from tkinter import filedialog, ttk
+from tkinter import filedialog, messagebox, ttk
 from datetime import datetime
 from typing import Any, Callable, List, Optional, Tuple
 
@@ -1394,11 +1394,39 @@ def create_summary_tab(parent: ttk.Notebook, state: dict, reload_data: Callable)
     vsb.pack(side="right", fill="y")
 
     ttk.Separator(outer, orient="horizontal").pack(fill="x", pady=PAD_MD)
+    btn_row = tk.Frame(outer, bg=COLORS["bg"])
+    btn_row.pack(pady=PAD_SM)
     ttk.Button(
-        outer,
+        btn_row,
         text="Refresh",
         command=lambda: _refresh_summary_dashboard(content, state, reload_data, canvas),
-    ).pack(pady=PAD_SM)
+    ).pack(side="left", padx=(0, PAD_SM))
+
+    def _export_pdf() -> None:
+        """Save Summary content as PDF via file dialog."""
+        filepath = filedialog.asksaveasfilename(
+            defaultextension=".pdf",
+            filetypes=[("PDF files", "*.pdf")],
+            title="Save Summary Report as PDF",
+        )
+        if not filepath:
+            return
+        try:
+            from export_pdf import export_summary_pdf
+            export_summary_pdf(filepath, state)
+            messagebox.showinfo("Export Complete",
+                                f"Summary saved to:\n{filepath}")
+        except ImportError:
+            messagebox.showerror(
+                "Missing Dependency",
+                "The 'fpdf2' package is required for PDF export.\n"
+                "Install it with: pip install fpdf2",
+            )
+        except OSError as e:
+            messagebox.showerror("Export Failed",
+                                 f"Could not write PDF:\n{e}")
+
+    ttk.Button(btn_row, text="Export PDF", command=_export_pdf).pack(side="left")
 
     _refresh_summary_dashboard(content, state, reload_data, canvas)
     return outer

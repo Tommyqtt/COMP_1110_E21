@@ -2,6 +2,17 @@
 
 This document describes the 4 case studies used to evaluate the Personal Budget and Spending Assistant. Each case study has its own transaction file and budget rules file in `tests/test_data/case_studies/`.
 
+Each transaction file now includes a `payment_method` column reflecting how the bill was paid. The supported payment methods used across the case studies are:
+
+| Payment Method | Typical Use |
+|---|---|
+| Octopus | MTR, buses, minibuses, canteens, groceries, convenience stores |
+| Credit Card | Restaurants (higher spend), Airport Express, digital subscriptions, big-ticket shopping |
+| Alipay HK | Taxis, dim sum / brunch restaurants |
+| WeChat Pay | Bubble tea shops, takeaway, small F&B |
+| PayPal | International app subscriptions (e.g. Duolingo) |
+| Cash | Untracked / uncategorized purchases |
+
 ---
 
 ## Case Study 1 — Daily Food Cap (`case1_food_cap_*`)
@@ -14,12 +25,20 @@ This document describes the 4 case studies used to evaluate the Personal Budget 
 - food: daily cap HK$50
 - transport: monthly cap HK$300
 
+**Payment methods in this case study:**
+- Most food: Octopus (canteen, dai pai dong, cha chaan teng, groceries)
+- Bubble tea / takeaway / snacks: WeChat Pay
+- Dim sum brunch: Alipay HK
+- Pricier restaurant meals (HK$60+): Credit Card
+- All MTR / bus / minibus: Octopus
+- Taxi: Alipay HK
+
 **Expected outputs:**
 - OVERSPEND alerts on: 2026-03-03 (HK$55), 2026-03-04 (HK$62), 2026-03-07 (HK$70), 2026-03-09 (HK$52), 2026-03-12 (HK$68)
 - STREAK alert: food exceeded daily cap on multiple consecutive days (Mar 3–4, Mar 7)
 - No transport alert (monthly total ≈ HK$185 < HK$300)
 
-**Strengths demonstrated:** Clear overspend warnings; streak detection helps identify habitual patterns.
+**Strengths demonstrated:** Clear overspend warnings; streak detection helps identify habitual patterns. Payment method breakdown shows most overspends happen at sit-down restaurants paid by Credit Card or Alipay HK.
 
 **Limitations:** System cannot distinguish between one expensive meal vs. multiple smaller ones on the same day; manual entry means a forgotten transaction can make a day appear under budget.
 
@@ -36,13 +55,18 @@ This document describes the 4 case studies used to evaluate the Personal Budget 
 - transport: monthly cap HK$300
 - food: monthly cap HK$600
 
+**Payment methods in this case study:**
+- All MTR trips: Octopus (as expected for daily commuting)
+- Airport Express: Credit Card (one-off purchase, commonly paid by card)
+- Canteen lunches: Octopus
+
 **Expected outputs:**
 - Monthly transport total ≈ HK$373 → OVERSPEND alert (exceeds HK$300)
 - Monthly food total ≈ HK$155 → no alert
 - Summary shows clear weekly breakdown of transport spend
 - Transport > food in % share → potential percentage threshold alert if configured (e.g. transport > 30%)
 
-**Strengths demonstrated:** Monthly period tracking catches cumulative transport creep; weekly breakdown helps pinpoint the expensive week (the airport trip week).
+**Strengths demonstrated:** Monthly period tracking catches cumulative transport creep; weekly breakdown helps pinpoint the expensive week (the airport trip week). Payment method data clearly separates routine Octopus commuting from the one-off Credit Card Airport Express purchase.
 
 **Limitations:** The system treats every transaction equally — it cannot flag that the airport trip was a one-off vs. routine overspending. No suggestion to use an Octopus monthly pass.
 
@@ -57,6 +81,11 @@ This document describes the 4 case studies used to evaluate the Personal Budget 
 **Sample budget rules:**
 - subscriptions: monthly cap HK$300
 
+**Payment methods in this case study:**
+- Netflix, Spotify, iCloud, Adobe, YouTube Premium, ChatGPT Plus: Credit Card (all are recurring international charges)
+- Duolingo Super: PayPal (international app, does not support local HK payment options)
+- Bulk food / transport entries: Credit Card / Octopus respectively
+
 **Expected outputs:**
 - January subscriptions: HK$258
 - February subscriptions: HK$326 → OVERSPEND alert (> HK$300)
@@ -64,7 +93,7 @@ This document describes the 4 case studies used to evaluate the Personal Budget 
 - SUBSCRIPTION CREEP alert: March vs February is a ~41% increase
 - Summary shows subscriptions growing as top-3 category by March
 
-**Strengths demonstrated:** The subscription creep detector catches gradual spending growth that is easy to miss month-by-month. The monthly breakdown makes the trend visible.
+**Strengths demonstrated:** The subscription creep detector catches gradual spending growth that is easy to miss month-by-month. The monthly breakdown makes the trend visible. All subscriptions being Credit Card / PayPal makes this category easy to audit — no Octopus or cash involved.
 
 **Limitations:** The system only compares the two most recent months; it cannot project future costs or identify which specific subscription added the most. No automated detection from bank statements.
 
@@ -84,13 +113,22 @@ This document describes the 4 case studies used to evaluate the Personal Budget 
 **Suggested percentage alert to configure (via menu option 8):**
 - shopping > 25% of total spending
 
+**Payment methods in this case study:**
+- MTR: Octopus
+- Taxi: Alipay HK
+- 7-Eleven / convenience store / stationery / books: Octopus
+- Uniqlo / shoes / electronics (large purchases): Credit Card
+- Sit-down restaurant meals: Credit Card or Alipay HK
+- Brunch: Alipay HK
+- Untracked "other" purchases: Cash (reflects the unrecorded / mystery nature of these entries)
+
 **Expected outputs:**
 - STREAK alert: food exceeded daily cap on 3+ consecutive days (Apr 1–3, Apr 9–10, etc.)
 - OVERSPEND alert: shopping weekly cap exceeded (Apr 10 week: HK$200+ in electronics alone)
 - UNCATEGORIZED alert: 2 transactions are in the 'other' category (Apr 13, Apr 14)
 - If % alert configured: shopping share is very high in this data set
 
-**Strengths demonstrated:** Multiple alert types fire simultaneously; the uncategorized warning prompts the user to review and fix their records; the streak alert makes habitual overspend visible.
+**Strengths demonstrated:** Multiple alert types fire simultaneously; the uncategorized warning prompts the user to review and fix their records; the streak alert makes habitual overspend visible. The Cash payment method on the two "other" entries reinforces why they are untracked — cash purchases are the hardest to account for.
 
 **Limitations:** "Other" transactions cannot be recategorized in-app currently (a future improvement would be an edit/re-categorize option). The system has no way to know that the HK$200 electronics purchase was a one-off gift rather than habitual shopping.
 
@@ -99,6 +137,13 @@ This document describes the 4 case studies used to evaluate the Personal Budget 
 ## How to Run a Case Study
 
 ### Manual Loading
+
+> **Note:** Transaction files now include a `payment_method` column as the 5th field:
+> ```
+> date,amount,category,description,payment_method
+> 2026-03-01,-45,food,Lunch at cha chaan teng,Octopus
+> 2026-03-01,-12,transport,MTR Admiralty to HKU,Octopus
+> ```
 
 ```bash
 # Load the case study data files instead of the default CSV files

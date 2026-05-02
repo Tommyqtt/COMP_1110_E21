@@ -56,6 +56,7 @@ from data import (
     validate_payment_method,
     load_categories,
     add_category,
+    remove_category,
     load_payment_methods,
     add_payment_method,
 )
@@ -827,12 +828,25 @@ def create_categories_tab(parent: ttk.Notebook,
             ).pack(anchor="w", pady=PAD_SM)
         else:
             for i, cat in enumerate(CATEGORIES, 1):
-                cat_item = tk.Frame(list_frame, bg=COLORS["accent_light"], padx=PAD_MD, pady=PAD_SM, highlightbackground=COLORS["border"], highlightthickness=1)
+                bg_c = COLORS["surface"] if cat in DEFAULT_CATEGORIES else COLORS["accent_light"]
+                cat_item = tk.Frame(list_frame, bg=bg_c, padx=PAD_MD, pady=PAD_SM, highlightbackground=COLORS["border"], highlightthickness=1)
                 cat_item.pack(fill="x", pady=PAD_SM)
                 tk.Label(
-                    cat_item, text=f"{i}. {cat}", bg=COLORS["accent_light"], fg=COLORS["text"],
+                    cat_item, text=f"{i}. {cat}", bg=bg_c, fg=COLORS["text"],
                     font=(FONT_FAMILY, FONT_SIZE, "bold"), width=20, anchor="w"
                 ).pack(side="left")
+
+                def do_remove(c=cat):
+                    if remove_category(c):
+                        refresh_category_list()
+                        if cat_hooks is not None:
+                            for hook in cat_hooks:
+                                hook()
+                        msg_label.config(text=f"Category '{c}' removed.", fg=COLORS["success"])
+                    else:
+                        msg_label.config(text=f"Cannot remove '{c}' — only one category left.", fg=COLORS["error"])
+
+                ttk.Button(cat_item, text="Remove", command=do_remove).pack(side="right", padx=(PAD_SM, 0))
     
     refresh_category_list()
 

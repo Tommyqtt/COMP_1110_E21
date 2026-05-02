@@ -489,5 +489,14 @@ def add_category(new_category: str) -> bool:
         return True
     return False
 
+
+def remove_category(category: str) -> bool:
+    clean_cat = category.strip().lower()
+    if clean_cat in CATEGORIES and len(CATEGORIES) > 1:
+        CATEGORIES.remove(clean_cat)
+        save_categories()
+        return True
+    return False
+
 def validate_category(category: str) -> bool:
     return bool(str(category or "").strip())

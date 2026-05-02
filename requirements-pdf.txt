@@ -1,0 +1,3 @@
+# Optional: PDF export from the Summary tab (Export PDF button).
+# Install with: pip install -r requirements-pdf.txt
+fpdf2>=2.8

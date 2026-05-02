@@ -2,7 +2,12 @@
 
 COMP1110 E21 — Topic A: budget helper with optional MockWealth portfolio simulation.
 
-Pure Python (stdlib only): CLI and Tkinter GUI.
+Core app uses **Python stdlib only** (CLI and Tkinter GUI). **PDF export** (Summary tab **Export PDF**) is optional and requires the third-party package **`fpdf2`**:
+
+```bash
+python3 -m pip install fpdf2
+# or: python3 -m pip install -r requirements-pdf.txt
+```
 
 ## How to run
 
@@ -13,7 +18,7 @@ python3 main.py --gui    # or -g
 
 Run from the repo root (same folder as `main.py`) so CSV paths resolve. **`budgets.csv`** lives next to `data.py` in the repo; CLI and GUI share that path. Design and alert behavior: [ARCHITECTURE.md](ARCHITECTURE.md).
 
-The GUI provides additional features including the ability to upload custom transaction CSV files and download summary reports as PDF files.
+The GUI provides additional features including the ability to upload custom transaction CSV files and download summary reports as PDF files (install `fpdf2` first; see above).
 
 ## Key features
 
@@ -21,7 +26,7 @@ The GUI provides additional features including the ability to upload custom tran
 - **Predictive helpers:** burn-rate / month forecast utilities in `stats.py` (used by alerts and tests).
 - **Subscription creep:** month-over-month recurring-cost checks (Case Study 3).
 - **Budget rules:** daily / weekly / monthly caps, % of spend thresholds, and overspend alerts (`budgets.csv` + `alerts.py`).
-- **File upload/download:** GUI supports uploading custom transaction CSV files and downloading summary reports as PDF.
+- **File upload/download:** GUI supports uploading custom transaction CSV files and downloading summary reports as PDF (requires `fpdf2`; see top of this file).
 
 ## File formats
 

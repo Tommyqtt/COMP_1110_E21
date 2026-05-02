@@ -7,21 +7,21 @@ date,amount,category,description,payment_method
 2026-04-03,-80,shopping,Clothing at Uniqlo,Credit Card
 2026-04-04,-50,food,Campus canteen,Octopus
 2026-04-04,-20,shopping,Convenience store,Octopus
-2026-04-05,-151,food,Expensive restaurant and drinks,Credit Card
-2026-04-05,-150,shopping,Shoes,Credit Card
+2026-04-05,-120,food,Dinner out with friends,Credit Card
+2026-04-05,-64,shopping,Shoes,Credit Card
 2026-04-06,-40,food,Normal day,Octopus
 2026-04-06,-10,shopping,Small items,Octopus
-2026-04-07,-52,food,Slightly over cap,Octopus
+2026-04-07,-52,food,Light lunch,Octopus
 2026-04-07,-35,shopping,Books,Octopus
-2026-04-08,-25,food,Under cap today,Octopus
-2026-04-09,-55,food,Over cap again,Octopus
+2026-04-08,-25,food,Quick snack only,Octopus
+2026-04-09,-55,food,Canteen lunch,Octopus
 2026-04-10,-62,food,Weekend brunch,Alipay HK
 2026-04-10,-200,shopping,Electronics accessory,Credit Card
-2026-04-11,-48,food,Just under cap,Octopus
-2026-04-12,-57,food,Slightly over,Octopus
+2026-04-11,-48,food,Takeaway lunch,Octopus
+2026-04-12,-57,food,Canteen lunch and drink,Octopus
 2026-04-13,-30,other,Mystery purchase,Cash
 2026-04-14,-45,other,Unrecorded item,Cash
-2026-04-15,-55,food,Over cap,Octopus
+2026-04-15,-55,food,Canteen lunch,Octopus
 2026-04-01,-12,transport,MTR,Octopus
 2026-04-02,-12,transport,MTR,Octopus
 2026-04-03,-12,transport,MTR,Octopus

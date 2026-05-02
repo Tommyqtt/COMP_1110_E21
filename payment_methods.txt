@@ -1,0 +1,7 @@
+cash
+octopus
+payme
+credit_card
+wechat pay
+alipay hk
+paypal

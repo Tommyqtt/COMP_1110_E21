@@ -1,3 +1,3 @@
 category,period,threshold,alert_type
-transport,monthly,730,overspend
+transport,monthly,538,overspend
 food,monthly,600,overspend

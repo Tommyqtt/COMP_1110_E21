@@ -1,35 +1,26 @@
 date,amount,category,description,payment_method
-2026-03-01,-22,transport,MTR Tuen Mun to campus return fare,Octopus
 2026-03-02,-22,transport,MTR Tuen Mun to campus return fare,Octopus
 2026-03-03,-22,transport,MTR Tuen Mun to campus return fare,Octopus
 2026-03-04,-22,transport,MTR Tuen Mun to campus return fare,Octopus
 2026-03-05,-22,transport,MTR Tuen Mun to campus return fare,Octopus
 2026-03-06,-22,transport,MTR Tuen Mun to campus return fare,Octopus
-2026-03-07,-22,transport,MTR Tuen Mun to campus return fare,Octopus
-2026-03-08,-22,transport,MTR Tuen Mun to campus return fare,Octopus
 2026-03-09,-22,transport,MTR Tuen Mun to campus return fare,Octopus
 2026-03-10,-22,transport,MTR Tuen Mun to campus return fare,Octopus
 2026-03-11,-22,transport,MTR Tuen Mun to campus return fare,Octopus
 2026-03-12,-22,transport,MTR Tuen Mun to campus return fare,Octopus
 2026-03-13,-22,transport,MTR Tuen Mun to campus return fare,Octopus
-2026-03-14,-22,transport,MTR Tuen Mun to campus return fare,Octopus
 2026-03-14,-65,transport,Airport Express and shuttle,Credit Card
-2026-03-15,-22,transport,MTR Tuen Mun to campus return fare,Octopus
 2026-03-16,-22,transport,MTR Tuen Mun to campus return fare,Octopus
 2026-03-17,-22,transport,MTR Tuen Mun to campus return fare,Octopus
 2026-03-18,-22,transport,MTR Tuen Mun to campus return fare,Octopus
 2026-03-19,-22,transport,MTR Tuen Mun to campus return fare,Octopus
 2026-03-20,-22,transport,MTR Tuen Mun to campus return fare,Octopus
-2026-03-21,-22,transport,MTR Tuen Mun to campus return fare,Octopus
-2026-03-22,-22,transport,MTR Tuen Mun to campus return fare,Octopus
 2026-03-23,-22,transport,MTR Tuen Mun to campus return fare,Octopus
 2026-03-24,-22,transport,MTR Tuen Mun to campus return fare,Octopus
 2026-03-25,-22,transport,MTR Tuen Mun to campus return fare,Octopus
 2026-03-26,-22,transport,MTR Tuen Mun to campus return fare,Octopus
 2026-03-26,-30,transport,Rainy-day taxi from campus,Alipay HK
 2026-03-27,-22,transport,MTR Tuen Mun to campus return fare,Octopus
-2026-03-28,-22,transport,MTR Tuen Mun to campus return fare,Octopus
-2026-03-29,-22,transport,MTR Tuen Mun to campus return fare,Octopus
 2026-03-30,-22,transport,MTR Tuen Mun to campus return fare,Octopus
 2026-03-03,-41,food,Campus lunch and snack,Octopus
 2026-03-06,-46,food,Canteen + coffee,Octopus

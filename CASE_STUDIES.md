@@ -53,12 +53,12 @@ Each transaction file now includes a `payment_method` column reflecting how the 
 
 ## Case Study 2 — Monthly Transport Tracking (`case2_transport_tracking_*`)
 
-**Scenario:** A student commuting from Tuen Mun to campus every day records a daily MTR return fare through the month. A one-off airport trip and one rainy-day taxi ride add realistic transport spikes.
+**Scenario:** A student commuting from Tuen Mun to campus every week day records a weekday MTR return fare through the month. A one-off airport trip and one rainy-day taxi ride add realistic transport spikes.
 
 **Goal:** Test monthly category cap alert and the weekly/monthly breakdown in summaries.
 
 **Sample budget rules:**
-- transport: monthly cap HK$730
+- transport: monthly cap HK$538
 - food: monthly cap HK$600
 
 **Payment methods in this case study:**
@@ -67,7 +67,7 @@ Each transaction file now includes a `payment_method` column reflecting how the 
 - Canteen lunches: Octopus
 
 **Expected outputs:**
-- Monthly transport total ≈ HK$755 → OVERSPEND alert (slightly above HK$730)
+- Monthly transport total ≈ HK$557 → OVERSPEND alert (slightly above HK$538)
 - Monthly food total ≈ HK$363 → no food cap alert (below HK$600)
 - Summary shows daily commute baseline with transport spikes around airport/taxi dates
 - Transport > food in % share → percentage threshold alert would fire if configured (e.g. transport > 30%)
@@ -79,7 +79,7 @@ Each transaction file now includes a `payment_method` column reflecting how the 
 
 **How an existing tool would handle this:**
 
-> **Octopus App** automatically logs every MTR tap and provides a monthly transport summary with zero manual entry — a clear advantage. However, it only captures Octopus transactions, so the Airport Express Credit Card payment and the taxi ride would be completely invisible. More critically, the app has no budget cap feature and would never alert the user that HK$755 exceeded the HK$730 monthly limit. Our system requires manual entry but provides the budget cap alert and automatic weekly breakdown that the Octopus App lacks entirely.
+> **Octopus App** automatically logs every MTR tap and provides a monthly transport summary with zero manual entry — a clear advantage. However, it only captures Octopus transactions, so the Airport Express Credit Card payment and the taxi ride would be completely invisible. More critically, the app has no budget cap feature and would never alert the user that HK$557 exceeded the HK$538 monthly limit. Our system requires manual entry but provides the budget cap alert and automatic weekly breakdown that the Octopus App lacks entirely.
 
 ---
 

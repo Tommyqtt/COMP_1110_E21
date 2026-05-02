@@ -308,12 +308,15 @@ def run_gui(transactions_path: str | None = None,
     nb = ttk.Notebook(root)
     nb.pack(fill="both", expand=True, padx=PAD_XL, pady=(0, PAD_XL))
 
+    # Category-change hooks: each tab registers a callable to run after categories change
+    _cat_hooks: list[Callable] = []
+
     # Summary tab
-    summary_frame = create_summary_tab(nb, state, reload_data)
+    summary_frame = create_summary_tab(nb, state, reload_data, _cat_hooks)
     nb.add(summary_frame, text="Summary")
 
     # Add tab
-    add_frame = create_add_tab(nb, state, save_data, reload_data)
+    add_frame = create_add_tab(nb, state, save_data, reload_data, _cat_hooks)
     nb.add(add_frame, text="Add")
 
     # Transactions tab
@@ -350,11 +353,11 @@ def run_gui(transactions_path: str | None = None,
     nb.add(portfolio_frame, text="Portfolio")
 
     # Settings tab (unified budgets.csv: caps, % rules, alert thresholds)
-    settings_frame = create_settings_tab(nb, state, reload_data)
+    settings_frame = create_settings_tab(nb, state, reload_data, _cat_hooks)
     nb.add(settings_frame, text="Settings")
 
     # Categories tab (manage custom categories)
-    categories_frame = create_categories_tab(nb)
+    categories_frame = create_categories_tab(nb, _cat_hooks)
     nb.add(categories_frame, text="Categories")
 
     root.mainloop()
@@ -363,7 +366,8 @@ def run_gui(transactions_path: str | None = None,
 _BUDGET_PERIODS = ("daily", "weekly", "monthly")
 
 
-def create_settings_tab(parent: ttk.Notebook, state: dict, reload_data: Callable) -> ttk.Frame:
+def create_settings_tab(parent: ttk.Notebook, state: dict, reload_data: Callable,
+                        cat_hooks: list[Callable] | None = None) -> ttk.Frame:
     """Edit budgets.csv (caps, category % rules, alert thresholds; alerts on Summary)."""
     outer = ttk.Frame(parent, padding=PAD_LG)
 
@@ -784,9 +788,15 @@ def create_settings_tab(parent: ttk.Notebook, state: dict, reload_data: Callable
 
     _bind_mousewheel_to_canvas_and_content(canvas, content)
     _sync_settings_scroll()
+
+    if cat_hooks is not None:
+        cat_hooks.append(lambda: redraw_budget_rows())
+        cat_hooks.append(lambda: redraw_pct_rows())
+
     return outer
 
-def create_categories_tab(parent: ttk.Notebook) -> ttk.Frame:
+def create_categories_tab(parent: ttk.Notebook,
+                          cat_hooks: list[Callable] | None = None) -> ttk.Frame:
     """Categories tab: manage (add/view) custom categories."""
     frame = ttk.Frame(parent, padding=PAD_LG)
     _tab_hero(
@@ -845,6 +855,9 @@ def create_categories_tab(parent: ttk.Notebook) -> ttk.Frame:
             msg_label.config(text=f"Category '{category}' added successfully!", fg=COLORS["success"])
             new_cat_entry.delete(0, "end")
             refresh_category_list()
+            if cat_hooks is not None:
+                for hook in cat_hooks:
+                    hook()
         else:
             msg_label.config(text=f"Category '{category}' already exists.", fg=COLORS["error"])
 
@@ -1420,7 +1433,8 @@ def _refresh_summary_dashboard(
     _bind_mousewheel_to_canvas_and_content(canvas, content)
 
 
-def create_summary_tab(parent: ttk.Notebook, state: dict, reload_data: Callable) -> ttk.Frame:
+def create_summary_tab(parent: ttk.Notebook, state: dict, reload_data: Callable,
+                       cat_hooks: list[Callable] | None = None) -> ttk.Frame:
     """Summary tab: KPI cards, category bars, trends."""
     outer = ttk.Frame(parent, padding=PAD_LG)
 
@@ -1480,10 +1494,16 @@ def create_summary_tab(parent: ttk.Notebook, state: dict, reload_data: Callable)
     ttk.Button(btn_row, text="Export PDF", command=_export_pdf).pack(side="left")
 
     _refresh_summary_dashboard(content, state, reload_data, canvas)
+
+    if cat_hooks is not None:
+        cat_hooks.append(lambda: _refresh_summary_dashboard(content, state, reload_data, canvas))
+
     return outer
 
 
-def create_add_tab(parent: ttk.Notebook, state: dict, save_data: Callable, reload_data: Callable) -> ttk.Frame:
+def create_add_tab(parent: ttk.Notebook, state: dict, save_data: Callable,
+                   reload_data: Callable,
+                   cat_hooks: list[Callable] | None = None) -> ttk.Frame:
     """Add transaction tab: form with date, amount, category, description."""
     frame = ttk.Frame(parent, padding=PAD_LG)
     _tab_hero(
@@ -1510,6 +1530,8 @@ def create_add_tab(parent: ttk.Notebook, state: dict, save_data: Callable, reloa
     cat_var = tk.StringVar()
     cat_combo = ttk.Combobox(card, textvariable=cat_var, values=CATEGORIES, width=20)
     cat_combo.pack(anchor="w", pady=(0, PAD_MD))
+    if cat_hooks is not None:
+        cat_hooks.append(lambda: cat_combo.configure(values=list(CATEGORIES)))
 
     _field_label(card, "Payment method")
     method_var = tk.StringVar(value=PAYMENT_METHODS[0])

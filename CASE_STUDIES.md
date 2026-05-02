@@ -45,6 +45,9 @@ Each transaction file now includes a `payment_method` column reflecting how the 
 
 **Limitations:** System cannot distinguish between one expensive meal vs. multiple smaller ones on the same day; manual entry means a forgotten transaction can make a day appear under budget.
 
+**How an existing tool would handle this:**
+
+> **Wallet by BudgetBakers** supports daily category budgets and fires a push notification the moment the HK$150 food cap is crossed, with a calendar heat map highlighting overspend days. However, it treats each day independently — there is no streak detection to tell the user "you've overspent 3 days in a row, this looks like a habit." Our system's explicit streak alert adds a layer of behavioural insight that Wallet does not offer.
 
 ---
 
@@ -74,6 +77,10 @@ Each transaction file now includes a `payment_method` column reflecting how the 
 
 **Limitations:** The system treats every transaction equally — it cannot flag that the airport trip was a one-off vs. routine overspending. No suggestion to use an Octopus monthly pass.
 
+**How an existing tool would handle this:**
+
+> **Octopus App** automatically logs every MTR tap and provides a monthly transport summary with zero manual entry — a clear advantage. However, it only captures Octopus transactions, so the Airport Express Credit Card payment and the taxi ride would be completely invisible. More critically, the app has no budget cap feature and would never alert the user that HK$755 exceeded the HK$730 monthly limit. Our system requires manual entry but provides the budget cap alert and automatic weekly breakdown that the Octopus App lacks entirely.
+
 ---
 
 ## Case Study 3 — Subscription Creep Detection (`case3_subscription_creep_*`)
@@ -100,6 +107,10 @@ Each transaction file now includes a `payment_method` column reflecting how the 
 **Strengths demonstrated:** The subscription creep detector catches gradual spending growth that is easy to miss month-by-month. The monthly breakdown makes the trend visible. All subscriptions being Credit Card / PayPal makes this category easy to audit — no Octopus or cash involved.
 
 **Limitations:** The system only compares the two most recent months; it cannot project future costs or identify which specific subscription added the most. No automated detection from bank statements.
+
+**How an existing tool would handle this:**
+
+> **Revolut** has a dedicated Subscriptions tab that auto-detects recurring card charges and lists each one with its amount and next billing date — making it easy to see all active subscriptions at a glance. However, it does not fire an alert if the total subscription spend crosses a user-defined monthly cap (HK$350 here), and there is no month-over-month percentage increase alert. The student would need to manually notice the ~41% rise in the chart. Our system proactively surfaces the creep as an explicit warning without the user needing to go looking for it.
 
 ---
 
@@ -136,6 +147,10 @@ Each transaction file now includes a `payment_method` column reflecting how the 
 **Strengths demonstrated:** Multiple alert types fire simultaneously; the uncategorized warning prompts the user to review and fix their records; the streak alert makes habitual overspend visible. The Cash payment method on the two "other" entries reinforces why they are untracked — cash purchases are the hardest to account for.
 
 **Limitations:** Although transactions can be edited and recategorized in-app, the system still relies on manual user updates to do so. It also has no way to know that the HK$200 electronics purchase was a one-off gift rather than habitual shopping.
+
+**How an existing tool would handle this:**
+
+> **YNAB (You Need A Budget)** handles multiple simultaneous budget rules well and forces the user to categorise every transaction before moving on — meaning the two "other" entries could not be ignored. However, YNAB uses monthly envelopes only, so there is no weekly shopping cap (HK$240 here), and it has no streak detection logic. It would flag each individual overspend day separately but would never connect them into a pattern. Our system is unique in firing all three alert types — streak, weekly cap, and uncategorized warning — in a single pass.
 
 ---
 

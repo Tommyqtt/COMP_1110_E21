@@ -35,12 +35,6 @@ Each transaction file now includes a `payment_method` column reflecting how the 
 - All MTR / bus / minibus: Octopus
 - Taxi: Alipay HK
 
-**Expected outputs:**
-- OVERSPEND alert on latest day: 2026-03-14 (HK$151 > HK$150)
-- STREAK alert: food exceeded daily cap for 3 consecutive days (Mar 3–5)
-- No transport alert (monthly total ≈ HK$157 < HK$350)
-- Summary pattern: food dominates category share, with higher spending concentrated in specific weekly windows
-
 **Strengths demonstrated:** Clear overspend warnings; streak detection helps identify habitual patterns. Payment method breakdown also helps reveal how overspend days are distributed across everyday methods (Octopus, WeChat Pay, and Credit Card), not only one payment channel.
 
 **Limitations:** System cannot distinguish between one expensive meal vs. multiple smaller ones on the same day; manual entry means a forgotten transaction can make a day appear under budget.
@@ -58,7 +52,7 @@ Each transaction file now includes a `payment_method` column reflecting how the 
 **Goal:** Test monthly category cap alert and the weekly/monthly breakdown in summaries.
 
 **Sample budget rules:**
-- transport: monthly cap HK$538
+- transport: monthly cap HK$520
 - food: monthly cap HK$600
 
 **Payment methods in this case study:**
@@ -66,20 +60,13 @@ Each transaction file now includes a `payment_method` column reflecting how the 
 - Airport Express: Credit Card (one-off purchase, commonly paid by card)
 - Canteen lunches: Octopus
 
-**Expected outputs:**
-- Monthly transport total ≈ HK$557 → OVERSPEND alert (slightly above HK$538)
-- Monthly food total ≈ HK$363 → no food cap alert (below HK$600)
-- Summary shows daily commute baseline with transport spikes around airport/taxi dates
-- Transport > food in % share → percentage threshold alert would fire if configured (e.g. transport > 30%)
-- Optional extra alert: anomaly detection may flag airport/taxi spike days
-
 **Strengths demonstrated:** Monthly period tracking catches cumulative transport creep; weekly breakdown helps pinpoint the expensive week (the airport trip week). Payment method data clearly separates routine Octopus commuting from the one-off Credit Card Airport Express purchase.
 
 **Limitations:** The system treats every transaction equally — it cannot flag that the airport trip was a one-off vs. routine overspending. No suggestion to use an Octopus monthly pass.
 
 **How an existing tool would handle this:**
 
-> **Octopus App** automatically logs every MTR tap and provides a monthly transport summary with zero manual entry — a clear advantage. However, it only captures Octopus transactions, so the Airport Express Credit Card payment and the taxi ride would be completely invisible. More critically, the app has no budget cap feature and would never alert the user that HK$557 exceeded the HK$538 monthly limit. Our system requires manual entry but provides the budget cap alert and automatic weekly breakdown that the Octopus App lacks entirely.
+> **Octopus App** automatically logs every MTR tap and provides a monthly transport summary with zero manual entry — a clear advantage. However, it only captures Octopus transactions, so the Airport Express Credit Card payment and the taxi ride would be completely invisible. More critically, the app has no budget cap feature and would never alert the user that HK$557 exceeded the HK$520 monthly limit. Our system requires manual entry but provides the budget cap alert and automatic weekly breakdown that the Octopus App lacks entirely.
 
 ---
 
@@ -96,13 +83,6 @@ Each transaction file now includes a `payment_method` column reflecting how the 
 - Netflix, Spotify, iCloud, YouTube Premium, Notion, Adobe: Credit Card (recurring digital charges)
 - Duolingo Super: PayPal (international app purchase)
 - Regular food / transport entries: Credit Card or Octopus depending on merchant
-
-**Expected outputs:**
-- January subscriptions: HK$230
-- February subscriptions: HK$252 (no overspend against HK$350 cap)
-- March subscriptions: HK$355 → OVERSPEND alert (> HK$350)
-- SUBSCRIPTION CREEP alert: March vs February is a ~41% increase
-- Summary shows subscription growth while food/transport stay comparatively stable
 
 **Strengths demonstrated:** The subscription creep detector catches gradual spending growth that is easy to miss month-by-month. The monthly breakdown makes the trend visible. All subscriptions being Credit Card / PayPal makes this category easy to audit — no Octopus or cash involved.
 
@@ -136,13 +116,6 @@ Each transaction file now includes a `payment_method` column reflecting how the 
 - Sit-down restaurant meals: Credit Card or Alipay HK
 - Brunch: Alipay HK
 - Untracked "other" purchases: Cash (reflects the unrecorded / mystery nature of these entries)
-
-**Expected outputs:**
-- STREAK alert: food exceeded daily cap on 3 consecutive days (Apr 1–3)
-- OVERSPEND alert: shopping weekly cap exceeded in the latest week (HK$245 > HK$240)
-- UNCATEGORIZED alert: 2 transactions are in the 'other' category (Apr 13, Apr 14)
-- If % alert configured: shopping share is very high in this data set
-- Optional extra alert: anomaly detection may flag a few large shopping/food days
 
 **Strengths demonstrated:** Multiple alert types fire simultaneously; the uncategorized warning prompts the user to review and fix their records; the streak alert makes habitual overspend visible. The Cash payment method on the two "other" entries reinforces why they are untracked — cash purchases are the hardest to account for.
 

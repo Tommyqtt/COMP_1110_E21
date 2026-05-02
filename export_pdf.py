@@ -5,7 +5,7 @@ Requires: fpdf2 (pip install fpdf2)
 """
 
 from datetime import datetime
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from fpdf import FPDF
 
@@ -18,6 +18,7 @@ from gui_settings import load_gui_settings, pct_rules_as_tuples
 from stats import (
     average_daily_spending,
     by_category,
+    by_payment_method,
     by_period,
     forecast_period_total,
     recommend_budget_caps,
@@ -95,15 +96,21 @@ def _cat_bar_color(name: str) -> str:
     return _CATEGORY_BAR_COLORS[h % len(_CATEGORY_BAR_COLORS)]
 
 
-def _section_header(pdf: FPDF, title: str, w: float = 0) -> None:
-    """Section header with teal underline accent."""
+def _section_header(pdf: FPDF, title: str, w: float = 0, *, x_pos: Optional[float] = None) -> None:
+    """Section header with teal underline accent. Use x_pos when the section is inset (e.g. columns).
+
+    Do not use Cell(new_x=LMARGIN): it resets X to the page margin and breaks column layouts / can skip
+    full-width blocks when fpdf thinks the cursor is still in the right column.
+    """
+    x_line = _MARGIN if x_pos is None else x_pos
+    tw = _CONTENT_W if w == 0 else w
+    pdf.set_x(x_line)
     pdf.set_font("Helvetica", "B", 11)
     pdf.set_text_color(*_hex_rgb(_COLORS["text"]))
-    _cell(pdf, 0 if w == 0 else w, 6, title, new_x="LMARGIN", new_y="NEXT")
+    _multi_cell(pdf, tw, 6, title)
+    y_after_title = pdf.get_y()
     pdf.set_fill_color(*_hex_rgb(_COLORS["accent"]))
-    if w == 0:
-        w = _CONTENT_W
-    pdf.rect(_MARGIN, pdf.get_y(), w, 0.6, "F")
+    pdf.rect(x_line, y_after_title, tw, 0.6, "F")
     pdf.ln(3)
 
 
@@ -122,6 +129,8 @@ def _alerts_block(pdf: FPDF, state: dict, x0: float = 0, w: float = 0) -> None:
     x0 = x0 or _MARGIN
     w = w or _CONTENT_W
 
+    pdf.set_xy(x0, pdf.get_y())
+
     messages = run_all_alerts(
         txs, rules,
         pct_rules=pct_rules,
@@ -130,7 +139,7 @@ def _alerts_block(pdf: FPDF, state: dict, x0: float = 0, w: float = 0) -> None:
         include_health=False,
     )
 
-    _section_header(pdf, "Alerts", w)
+    _section_header(pdf, "Alerts", w, x_pos=x0)
 
     if not messages:
         _alert_banner(pdf, "clear", "No budget or behaviour warnings right now.", x0, w)
@@ -223,7 +232,8 @@ def _category_bars(pdf: FPDF, state: dict, x0: float = 0, w: float = 0) -> None:
     x0 = x0 or _MARGIN
     w = w or _CONTENT_W
 
-    _section_header(pdf, "Spending by Category", w)
+    pdf.set_x(x0)
+    _section_header(pdf, "Spending by Category", w, x_pos=x0)
 
     bar_w = min(70, w - 50)
     for cat_name, amt in sorted(cats.items(), key=lambda x: x[1], reverse=True):
@@ -262,6 +272,62 @@ def _category_bars(pdf: FPDF, state: dict, x0: float = 0, w: float = 0) -> None:
         pdf.ln(4)
 
 
+def _fmt_payment_label(method: str) -> str:
+    """Human-readable payment method for PDF (matches summary-style tokens)."""
+    s = (method or "").strip().replace("_", " ")
+    return " ".join(w.capitalize() for w in s.split()) if s else ""
+
+
+def _payment_method_bars(pdf: FPDF, state: dict, x0: float = 0, w: float = 0) -> None:
+    txs = state.get("transactions", [])
+    if not txs:
+        return
+    total = total_spending(txs)
+    if total == 0:
+        return
+    methods = by_payment_method(txs)
+    rows = [(m, a) for m, a in sorted(methods.items(), key=lambda x: x[1], reverse=True) if a > 0]
+    if not rows:
+        return
+    x0 = x0 or _MARGIN
+    w = w or _CONTENT_W
+
+    pdf.set_x(x0)
+    _section_header(pdf, "Spending by Payment Method", w, x_pos=x0)
+
+    bar_w = min(70, w - 50)
+    for method_name, amt in rows:
+        pct = (amt / total) * 100.0
+        y0 = pdf.get_y()
+        label = _fmt_payment_label(method_name)
+
+        pdf.set_xy(x0, y0)
+        pdf.set_font("Helvetica", "", 7.5)
+        pdf.set_text_color(*_hex_rgb(_COLORS["text"]))
+        _cell(pdf, 18, 4, label[:28])
+
+        track_x = x0 + 19
+        pdf.set_fill_color(*_hex_rgb(_COLORS["border"]))
+        pdf.rect(track_x, y0 + 0.8, bar_w, 3, "D")
+
+        fill_w = max(0.6, bar_w * (pct / 100.0))
+        bar_color = _hex_rgb(_cat_bar_color(method_name))
+        pdf.set_fill_color(*bar_color)
+        pdf.rect(track_x, y0 + 0.8, fill_w, 3, "F")
+
+        pdf.set_xy(track_x + bar_w + 1.5, y0)
+        pdf.set_font("Helvetica", "B", 7)
+        pdf.set_text_color(*_hex_rgb(_COLORS["accent"]))
+        _cell(pdf, 8, 4, f"{pct:.0f}%")
+
+        pdf.set_xy(track_x + bar_w + 10, y0)
+        pdf.set_font("Helvetica", "", 7)
+        pdf.set_text_color(*_hex_rgb(_COLORS["text_muted"]))
+        _cell(pdf, 0, 4, f"HK$ {amt:,.2f}")
+
+        pdf.ln(4)
+
+
 def _momentum(pdf: FPDF, state: dict) -> None:
     txs = state.get("transactions", [])
     if not txs:
@@ -277,6 +343,7 @@ def _momentum(pdf: FPDF, state: dict) -> None:
     pct30 = (t30 / total) * 100.0
     pct365 = (t365 / total) * 100.0
 
+    pdf.set_x(_MARGIN)
     _section_header(pdf, "Momentum")
     _kpi_row(pdf, [
         ("Last 7 days", f"HK$ {t7:,.2f}", f"{pct7:.1f}% of total spending"),
@@ -293,7 +360,8 @@ def _forecasts(pdf: FPDF, state: dict, x0: float = 0, w: float = 0) -> None:
     x0 = x0 or _MARGIN
     w = w or _CONTENT_W
 
-    _section_header(pdf, "Forecasts", w)
+    pdf.set_x(x0)
+    _section_header(pdf, "Forecasts", w, x_pos=x0)
 
     y0 = pdf.get_y()
     pdf.set_fill_color(*_hex_rgb(_COLORS["surface"]))
@@ -305,6 +373,7 @@ def _forecasts(pdf: FPDF, state: dict, x0: float = 0, w: float = 0) -> None:
     _multi_cell(pdf, w - 4, 2.8,
                    "Projected end-of-period total at current pace.")
 
+    pdf.set_x(x0)
     pdf.set_y(y0 + 7)
     bar_w = min(60, w - 60)
     for r in rules:
@@ -361,7 +430,8 @@ def _recommended_budgets(pdf: FPDF, state: dict, x0: float = 0, w: float = 0) ->
     x0 = x0 or _MARGIN
     w = w or _CONTENT_W
 
-    _section_header(pdf, "Recommended Budgets", w)
+    pdf.set_x(x0)
+    _section_header(pdf, "Recommended Budgets", w, x_pos=x0)
 
     pdf.set_font("Helvetica", "", 6.5)
     pdf.set_text_color(*_hex_rgb(_COLORS["text_muted"]))
@@ -386,7 +456,8 @@ def _recent_months(pdf: FPDF, state: dict, x0: float = 0, w: float = 0) -> None:
     x0 = x0 or _MARGIN
     w = w or _CONTENT_W
 
-    _section_header(pdf, "Recent Months", w)
+    pdf.set_x(x0)
+    _section_header(pdf, "Recent Months", w, x_pos=x0)
 
     for key in sorted(monthly.keys())[-3:]:
         y0 = pdf.get_y()
@@ -467,22 +538,28 @@ def export_summary_pdf(filepath: str, state: dict) -> str:
     _alerts_block(pdf, state, _MARGIN, _CONTENT_W)
     pdf.ln(1)
 
-    # ── Two-column row: Spending by Category | Forecasts ──
-    col_w = _CONTENT_W / 2 - 2
-    y_row = pdf.get_y()
-    _category_bars(pdf, state, _MARGIN, col_w + 8)
-    y_left = pdf.get_y()
+    # ── Summary body: same vertical order as the GUI (category → payment method → forecasts).
+    # Stacking full-width sections avoids fpdf cursor bugs from side-by-side columns that
+    # could skip or clip the payment-method block in some viewers.
+    pdf.set_xy(_MARGIN, pdf.get_y())
+    _category_bars(pdf, state, _MARGIN, _CONTENT_W)
+    pdf.ln(1)
 
-    pdf.set_xy(_MARGIN + col_w + 10, y_row)
-    _forecasts(pdf, state, _MARGIN + col_w + 10, col_w - 2)
-    y_right = pdf.get_y()
+    pdf.set_xy(_MARGIN, pdf.get_y())
+    _payment_method_bars(pdf, state, _MARGIN, _CONTENT_W)
+    pdf.ln(1)
 
-    pdf.set_y(max(y_left, y_right) + 1)
+    pdf.set_xy(_MARGIN, pdf.get_y())
+    _forecasts(pdf, state, _MARGIN, _CONTENT_W)
+    pdf.ln(1)
 
+    pdf.set_xy(_MARGIN, pdf.get_y())
     # ── Momentum (full width, 3 columns) ──
     _momentum(pdf, state)
 
     # ── Two-column row: Recommended Budgets | Recent Months ──
+    col_w = _CONTENT_W / 2 - 2
+    pdf.set_xy(_MARGIN, pdf.get_y())
     y_row = pdf.get_y()
     _recommended_budgets(pdf, state, _MARGIN, col_w + 8)
     y_left = pdf.get_y()
@@ -491,7 +568,7 @@ def export_summary_pdf(filepath: str, state: dict) -> str:
     _recent_months(pdf, state, _MARGIN + col_w + 10, col_w - 2)
     y_right = pdf.get_y()
 
-    pdf.set_y(max(y_left, y_right) + 1)
+    pdf.set_xy(_MARGIN, max(y_left, y_right) + 1)
 
     pdf.output(filepath)
     return filepath
